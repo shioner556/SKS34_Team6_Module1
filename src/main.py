@@ -1,4 +1,4 @@
-# main.py
+# 메인 함수
 
 def preprocess(file):
     """1단계: 전처리 및 정적 분석"""

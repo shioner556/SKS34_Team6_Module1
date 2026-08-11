@@ -1,3 +1,6 @@
+# Streamlit을 사용하기에 실제 사용자가 실행하는 곳은 app.py가 될 가능성이 높습니다.
+# 4단계 UI 과정입니다.
+
 import streamlit as st
 from pipeline import run_pipeline
 
