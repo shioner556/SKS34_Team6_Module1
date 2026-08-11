@@ -126,7 +126,7 @@ def analyze_file_type(file_path, filename):
     displayed_extension = filename_info["last_extension"]
     mime_type = detect_mime_type(file_path)
 
-    # 현재는 단순한 임시 비교.
+    # 현재는 단순한 임시 비교. 아직 구현 안됨
     # 실제 구현에서는 MIME <-> 확장자 매핑 테이블을 만드는 것이 좋다.
     extension_mismatch = 0
 
