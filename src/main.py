@@ -13,6 +13,11 @@ def launch_predict(features):
     print("[2단계] 머신러닝 예측 시작")
     pass
 
+def launch_train(features):
+    """2-A단계: 머신러닝 모델 학습"""
+    print("[2-A단계] 머신러닝 모델 학습 시작")
+    pass
+
 def launch_analyze_with_agent(features, prediction):
     """3단계: OpenAI Agent 분석"""
     print("[3단계] Agent 분석 시작")
