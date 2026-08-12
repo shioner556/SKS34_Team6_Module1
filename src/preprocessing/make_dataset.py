@@ -7,9 +7,11 @@ project/
 │   └── preprocessing/
 │       ├── preprocessor.py
 │       └── make_dataset.py
-├── test_samples/
-│   ├── benign/
-│   └── malware/
+├── data/
+│   ├── raw/
+│   │   ├── benign/ 정상 파일
+│   │   └── malware/ 악성 파일
+│   └── preprocessed/ 전처리가 완료된 .csv 파일
 └── ...
 
 실행:
@@ -17,7 +19,7 @@ project/
     python src/preprocessing/make_dataset.py
 
 출력:
-    프로젝트 루트의 dataset.csv
+    data/preprocessed/dataset.csv
 """
 
 from __future__ import annotations
