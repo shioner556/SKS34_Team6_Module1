@@ -39,7 +39,7 @@ except ImportError:
 # parents[2] == project/
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-TEST_SAMPLES_DIR = PROJECT_ROOT / "test_samples"
+TEST_SAMPLES_DIR = PROJECT_ROOT / "data/raw"
 BENIGN_DIR = TEST_SAMPLES_DIR / "benign"
 MALWARE_DIR = TEST_SAMPLES_DIR / "malware"
 DEFAULT_OUTPUT = PROJECT_ROOT / "dataset.csv"
