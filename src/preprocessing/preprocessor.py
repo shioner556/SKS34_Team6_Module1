@@ -218,30 +218,96 @@ EMBEDDED_SIGNATURES = {
     b"\x37\x7a\xbc\xaf\x27\x1c",
 }
 
-# 확장자별 header size mapping.
-# 명세에서 "확장자에 따른 header size mapping 제작"을 요구하므로
-# 여기서는 분석용 기본값을 고정한다.
+# 확장자별 header entropy 계산 범위.
+# 파일 시그니처와 초기 메타데이터/컨테이너 구조가 들어오는 범위를 기준으로
+# 설정한다. 값은 Magic Bytes 자체의 길이가 아니라, header_entropy를 계산할
+# 파일 앞부분의 최대 byte 수이다. 파일이 이보다 작으면 파일 전체를 사용한다.
 HEADER_SIZE_MAP = {
-    ".pdf": 4096,
+    # 문서
+    ".pdf": 1024,
+    ".doc": 512,
+    ".docx": 4096,
+    ".docm": 4096,
+    ".xls": 512,
+    ".xlsx": 4096,
+    ".xlsm": 4096,
+    ".ppt": 512,
+    ".pptx": 4096,
+    ".pptm": 4096,
+    ".txt": 4096,
+    ".rtf": 1024,
+    ".odt": 4096,
+    ".ods": 4096,
+    ".odp": 4096,
+    ".csv": 4096,
+    ".hwp": 512,
+    ".hwpx": 4096,
+
+    # 이미지
     ".jpg": 4096,
     ".jpeg": 4096,
-    ".png": 4096,
-    ".gif": 4096,
-    ".bmp": 4096,
-    ".webp": 4096,
+    ".png": 64,
+    ".gif": 64,
+    ".bmp": 64,
+    ".tif": 64,
+    ".tiff": 64,
+    ".webp": 64,
+    ".ico": 64,
+    ".svg": 4096,
+
+    # 실행 파일
     ".exe": 4096,
     ".dll": 4096,
     ".sys": 4096,
     ".scr": 4096,
+    ".msi": 512,
+    ".com": 512,
+
+    # 스크립트/소스 텍스트
+    ".js": 4096,
+    ".jse": 4096,
+    ".ps1": 4096,
+    ".psm1": 4096,
+    ".vbs": 4096,
+    ".vbe": 4096,
+    ".bat": 4096,
+    ".cmd": 4096,
+    ".sh": 4096,
+    ".bash": 4096,
+    ".py": 4096,
+    ".pl": 4096,
+    ".rb": 4096,
+    ".php": 4096,
+    ".php3": 4096,
+    ".php4": 4096,
+    ".php5": 4096,
+    ".phtml": 4096,
+    ".jsp": 4096,
+    ".jspx": 4096,
+    ".asp": 4096,
+    ".aspx": 4096,
+    ".cgi": 4096,
+
+    # 압축/컨테이너
     ".zip": 4096,
-    ".rar": 4096,
-    ".7z": 4096,
-    ".docx": 4096,
-    ".xlsx": 4096,
-    ".pptx": 4096,
+    ".rar": 64,
+    ".7z": 64,
+    ".tar": 512,
+    ".gz": 64,
+    ".bz2": 64,
+    ".xz": 64,
+    ".tar.gz": 64,
+    ".tar.bz2": 64,
+    ".tar.xz": 64,
 }
 
 DEFAULT_HEADER_SIZE = 4096
+
+# KNOWN_EXTENSIONS와 HEADER_SIZE_MAP이 서로 어긋나는 것을 조기에 탐지한다.
+_MISSING_HEADER_SIZE_EXTENSIONS = KNOWN_EXTENSIONS - HEADER_SIZE_MAP.keys()
+if _MISSING_HEADER_SIZE_EXTENSIONS:
+    missing = ", ".join(sorted(_MISSING_HEADER_SIZE_EXTENSIONS))
+    raise RuntimeError(f"HEADER_SIZE_MAP에 없는 확장자: {missing}")
 
 # Archive bomb 판정용 기준.
 # 실제 프로젝트에서는 데이터셋 특성에 맞춰 별도 설정 파일로 분리하는 것을 권장.
