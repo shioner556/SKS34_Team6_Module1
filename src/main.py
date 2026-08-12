@@ -1,6 +1,7 @@
 # 메인 함수
 from pathlib import Path
 from preprocessing.preprocessor import preprocess
+from agent.agent import analyze_with_agent
 
 def launch_preprocess(file):
     features = preprocess("sample.jpg.php")
@@ -16,7 +17,8 @@ def launch_predict(features):
 def launch_analyze_with_agent(features, prediction):
     """3단계: OpenAI Agent 분석"""
     print("[3단계] Agent 분석 시작")
-    pass
+    result = analyze_with_agent(features, prediction)
+    return result
 
 def main():
     print("=== 악성 파일 분석 프로그램 ===")

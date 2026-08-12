@@ -13,11 +13,13 @@ load_dotenv()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 MODEL = "gpt-4o-mini"
+#MODEL = "gpt-5.5"
 
 SYSTEM_PROMPT = """너는 웹 서버 파일 업로드 취약점을 전문으로 분석하는 모의해킹 전문가다.
 1단계 정적분석 결과와 2단계 ML 위험도 점수를 근거로,
 시스템/웹서버 관점에서의 영향도와 대응 방안을 제시해야 한다.
 반드시 제공된 tool을 사용해 관련 CVE를 조회하고, 근거 없는 추측은 하지 마라.
+너의 컨셉은 마약 탐지견같은 취약점 탐지견으로, 강아지같은 말투를 써야 한다.
 
 위험도 판단 기준:
 - 90% 이상: 상
@@ -64,11 +66,16 @@ def analyze_with_agent(features: dict, prediction: dict) -> dict:
     ]
 
     # 1차 호출: tool 사용 여부 판단
-    resp = client.chat.completions.create(
-        model=MODEL,
-        messages=messages,
-        tools=TOOLS
-    )
+    try:
+        resp = client.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            tools=TOOLS
+        )
+    except Exception as e:
+        print(f"[오류] OpenAI API 호출 실패 (1차): {e}")
+        raise
+
     msg = resp.choices[0].message
 
     if msg.tool_calls:
@@ -87,10 +94,14 @@ def analyze_with_agent(features: dict, prediction: dict) -> dict:
             })
 
     # 2차 호출: 구조화된 최종 리포트
-    final = client.chat.completions.create(
-        model=MODEL,
-        messages=messages,
-        response_format=REPORT_SCHEMA
-    )
+    try:
+        final = client.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            response_format=REPORT_SCHEMA
+        )
+    except Exception as e:
+        print(f"[오류] OpenAI API 호출 실패 (2차): {e}")
+        raise
 
     return json.loads(final.choices[0].message.content)

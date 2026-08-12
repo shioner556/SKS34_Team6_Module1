@@ -5,7 +5,7 @@ import requests
 def get_cve_info(keyword: str):
     """NVD API로 키워드 관련 CVE를 검색한다 (예: 'PHP webshell', 'double extension upload')"""
     url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
-    resp = requests.get(url, params={"keywordSearch": keyword, "resultsPerPage": 5})
+    resp = requests.get(url, params={"keywordSearch": keyword, "resultsPerPage": 5}, timeout=10)
     resp.raise_for_status()
     data = resp.json()
     return [
@@ -16,6 +16,9 @@ def get_cve_info(keyword: str):
         for item in data.get("vulnerabilities", [])
     ]
 
+def search_local_cve(keyword: str):
+    """로컬 CVE 데이터베이스에서 키워드 관련 CVE를 검색한다"""
+    pass
 
 # OpenAI function-calling에 넘길 tool 스펙
 TOOLS = [
