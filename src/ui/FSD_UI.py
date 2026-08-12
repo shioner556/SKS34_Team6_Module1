@@ -9,9 +9,17 @@ from preprocessor import preprocess
 # 타이틀부분
 st.title('FSD(File-Sniffing-Dog)')
 st.write('---')
+st.write('🐶제가 냄새를 맡을 수 있게 파일을 업로드 해주세요!')
 # 파일 업로드 부분
-uploaded_files = st.file_uploader('🐶제가 냄새를 맡을 수 있게 파일을 업로드 해주세요!', accept_multiple_files = True) 
-sniff_clicked = st.button('냄새 맡기')
+upload_col, button_col = st.columns([4,1], vertical_alignment= "center")
+with upload_col:
+ uploaded_files = st.file_uploader(
+    '파일 업로드',
+    accept_multiple_files = True,
+    label_visibility='collapsed'
+    ) 
+with button_col:
+ sniff_clicked = st.button('냄새 맡기')
 st.write('---')
 col1, mid, col2 = st.columns([10, 1, 10])
 
