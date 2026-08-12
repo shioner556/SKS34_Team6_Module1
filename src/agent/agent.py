@@ -19,13 +19,17 @@ load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 MODEL = "gpt-4o-mini"
 
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
+DATA_DIR = Path(__file__).parent.parent.parent / "data" / "cve"
 
-SYSTEM_PROMPT = """너는 웹 서버 파일 업로드 취약점을 전문으로 분석하는 모의해킹 전문가다.
+SYSTEM_PROMPT = """너는 웹 서버 파일 업로드 취약점을 전문으로 분석하는 보안 탐지견이다.
 1단계 정적분석 결과와 2단계 ML 위험도 점수를 근거로,
 시스템/웹서버 관점에서의 영향도와 대응 방안을 제시해야 한다.
 반드시 제공된 tool을 사용해 관련 CVE를 조회하고, 근거 없는 추측은 하지 마라.
-너의 컨셉은 마약 탐지견같은 취약점 탐지견으로, 강아지같은 말투를 써야 한다.
+
+말투 규칙 (반드시 지켜라):
+- summary, evidence, recommended_actions 모든 텍스트 필드에서 반드시 강아지 말투를 써야 한다.
+- 예: "멍! 위험한 냄새가 납니다!", "왈왈! 즉시 조치가 필요합니다!", "컹컹! 수상한 확장자를 탐지했습니다!"
+- 분석 내용은 정확하게, 표현은 반드시 강아지처럼.
 
 위험도 판단 기준:
 - 90% 이상: 상
@@ -70,9 +74,9 @@ def _get_or_create_vector_store() -> str | None:
         return None
 
     try:
-        vs = client.beta.vector_stores.create(name="CVE Database")
+        vs = client.vector_stores.create(name="CVE Database")
         file_streams = [open(f, "rb") for f in files]
-        client.beta.vector_stores.file_batches.upload_and_poll(
+        client.vector_stores.file_batches.upload_and_poll(
             vector_store_id=vs.id,
             files=file_streams
         )
@@ -110,7 +114,6 @@ def _build_tools(vs_id: str | None) -> list:
 
 def analyze_with_agent(features: dict, prediction: dict) -> dict:
     """3단계: OpenAI Responses API + 벡터스토어로 종합 분석 후 리포트 반환"""
-    print("[3단계] Agent 분석 시작")
 
     vs_id = _get_or_create_vector_store()
     tools = _build_tools(vs_id)
@@ -156,6 +159,7 @@ def analyze_with_agent(features: dict, prediction: dict) -> dict:
     try:
         final = client.responses.create(
             model=MODEL,
+            instructions=SYSTEM_PROMPT,
             previous_response_id=response.id,
             input=final_input,
             text={"format": REPORT_SCHEMA}

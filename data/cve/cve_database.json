@@ -1,0 +1,52 @@
+[
+  {
+    "id": "CVE-2017-12615",
+    "keywords": ["jsp", "tomcat", "upload", "webshell", "PUT"],
+    "description": "Apache Tomcat에서 PUT 메서드를 통해 JSP 파일을 업로드하여 원격 코드 실행이 가능한 취약점. 웹셸 업로드에 직접 악용됨."
+  },
+  {
+    "id": "CVE-2018-11776",
+    "keywords": ["struts", "ognl", "rce", "upload", "java"],
+    "description": "Apache Struts2의 OGNL 인젝션을 통한 원격 코드 실행. 파일 업로드 기능과 결합하여 웹셸 배포에 사용됨."
+  },
+  {
+    "id": "CVE-2020-17519",
+    "keywords": ["flink", "upload", "directory traversal", "webshell"],
+    "description": "Apache Flink REST API를 통한 디렉터리 트래버설 및 임의 파일 업로드 취약점. 웹셸 업로드 가능."
+  },
+  {
+    "id": "CVE-2021-41773",
+    "keywords": ["apache", "path traversal", "rce", "php", "upload"],
+    "description": "Apache HTTP Server 2.4.49의 경로 트래버설 및 RCE 취약점. mod_cgi 활성화 시 웹셸 실행 가능."
+  },
+  {
+    "id": "CVE-2022-26134",
+    "keywords": ["confluence", "ognl", "rce", "webshell"],
+    "description": "Atlassian Confluence의 OGNL 인젝션을 통한 원격 코드 실행. 웹셸 배포에 적극 악용됨."
+  },
+  {
+    "id": "CVE-2019-0232",
+    "keywords": ["cgi", "cmd", "windows", "tomcat", "rce", "upload"],
+    "description": "Windows 환경의 Apache Tomcat에서 CGI 서블릿을 통한 원격 코드 실행. 확장자 우회 후 CGI 스크립트 실행 가능."
+  },
+  {
+    "id": "CVE-2023-44487",
+    "keywords": ["http2", "dos", "rapid reset", "webserver"],
+    "description": "HTTP/2 Rapid Reset Attack. 웹서버 자원 고갈 공격으로 파일 업로드 서비스 마비에 활용됨."
+  },
+  {
+    "id": "CVE-2016-3081",
+    "keywords": ["struts", "dynamic method", "rce", "upload", "java"],
+    "description": "Apache Struts2 동적 메서드 호출을 통한 원격 코드 실행. 다중 확장자 파일 업로드와 결합 가능."
+  },
+  {
+    "id": "CVE-2014-0094",
+    "keywords": ["struts", "classloader", "upload", "parameter"],
+    "description": "Apache Struts2 ClassLoader 조작 취약점. 악성 파라미터를 통해 파일 업로드 필터 우회 가능."
+  },
+  {
+    "id": "CVE-2018-1000861",
+    "keywords": ["jenkins", "groovy", "rce", "upload", "script"],
+    "description": "Jenkins Groovy 스크립트 엔진을 통한 RCE. 업로드된 스크립트 파일 실행에 활용됨."
+  }
+]
