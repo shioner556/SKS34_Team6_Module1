@@ -10,7 +10,7 @@ import os
 import json
 from pathlib import Path
 from openai import OpenAI
-from dotenv import load_dotenv, set_key
+from dotenv import load_dotenv
 
 from .tools import TOOLS, TOOL_FUNCTIONS
 
@@ -60,16 +60,13 @@ REPORT_SCHEMA = {
 }
 
 _vector_store_id = None
-ENV_PATH = Path(__file__).parent.parent.parent / ".env"
 
 
-def _save_vector_store_id(vs_id: str):
-    """벡터스토어 ID를 .env 파일에 저장한다."""
-    set_key(str(ENV_PATH), "VECTOR_STORE_ID", vs_id)
-
-
-def _get_or_create_vector_store() -> str | None:
-    """.env에 저장된 벡터스토어 ID를 재사용하거나, 없으면 새로 생성 후 저장한다."""
+def _get_vector_store() -> str | None:
+    """.env의 VECTOR_STORE_ID를 읽어 반환한다.
+    ID가 없으면 None을 반환하고 웹서치만 사용한다.
+    벡터스토어 생성은 setup_vectorstore.py를 실행할 것.
+    """
     global _vector_store_id
     if _vector_store_id:
         return _vector_store_id
@@ -77,32 +74,11 @@ def _get_or_create_vector_store() -> str | None:
     saved_id = os.getenv("VECTOR_STORE_ID")
     if saved_id:
         _vector_store_id = saved_id
-        print(f"[벡터스토어] 기존 ID 재사용 (ID: {saved_id})")
+        print(f"[벡터스토어] ID 로드 (ID: {saved_id})")
         return _vector_store_id
 
-    if not DATA_DIR.exists():
-        return None
-
-    files = [p for p in DATA_DIR.glob("*") if p.suffix in [".json", ".pdf", ".txt"]]
-    if not files:
-        return None
-
-    try:
-        vs = client.vector_stores.create(name="CVE Database")
-        file_streams = [open(f, "rb") for f in files]
-        client.vector_stores.file_batches.upload_and_poll(
-            vector_store_id=vs.id,
-            files=file_streams
-        )
-        for f in file_streams:
-            f.close()
-        _vector_store_id = vs.id
-        _save_vector_store_id(vs.id)
-        print(f"[벡터스토어] {len(files)}개 파일 업로드 완료, .env에 ID 저장 (ID: {vs.id})")
-        return _vector_store_id
-    except Exception as e:
-        print(f"[경고] 벡터스토어 설정 실패, 웹서치만 사용합니다: {e}")
-        return None
+    print("[경고] VECTOR_STORE_ID가 .env에 없습니다. setup_vectorstore.py를 먼저 실행하세요. 웹서치만 사용합니다.")
+    return None
 
 
 def _build_tools(vs_id: str | None) -> list:
@@ -130,7 +106,7 @@ def _build_tools(vs_id: str | None) -> list:
 def analyze_with_agent(features: dict, prediction: dict) -> dict:
     """3단계: OpenAI Responses API + 벡터스토어로 종합 분석 후 리포트 반환"""
 
-    vs_id = _get_or_create_vector_store()
+    vs_id = _get_vector_store()
     tools = _build_tools(vs_id)
 
     user_msg = f"""[1단계 정적분석 결과]
