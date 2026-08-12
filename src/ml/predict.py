@@ -46,9 +46,8 @@ def predict_malware_risk(ml_features: dict) -> dict:
     # 1. 입력 피처 데이터를 DataFrame 1줄 형태로 변환
     df_input = pd.DataFrame([ml_features])
 
-    # -------------------------------------------------------------
-    # 💡 핵심: 팀원분의 get_dummies 방식과 피처 드롭을 자동으로 반영
-    # -------------------------------------------------------------
+    # get_dummies 방식과 피처 드롭을 자동으로 반영
+    
     # 만약 입력 데이터에 extension_category가 있다면 원-핫 인코딩 적용
     if 'extension_category' in df_input.columns:
         df_input = pd.get_dummies(df_input, columns=['extension_category'], drop_first=False)
@@ -67,6 +66,7 @@ def predict_malware_risk(ml_features: dict) -> dict:
 
     # 모델이 학습했던 '정확한 순서와 피처'만 남기기
     df_input = df_input[required_columns]
+
     # -------------------------------------------------------------
 
     # 2. 모델이 정상적으로 로드된 경우 -> ML 모델 추론
@@ -118,64 +118,3 @@ def predict_malware_risk_json(ml_features: dict) -> str:
     """
     result = predict_malware_risk(ml_features)
     return json.dumps(result, ensure_ascii=False)
-
-# ==========================================
-# 모듈 작동 단독 테스트 (main 실행 시)
-# ==========================================
-if __name__ == "__main__":
-    print("--- [ML 예측 모듈 작동 테스트] ---")
-
-    # 1. 테스트용 임의 피처 데이터 생성
-    dummy_features = {
-        'file_size': 102400,
-        'filename_length': 12,
-        'extension_count': 1,
-        'has_double_extension': 0,
-        'has_uppercase_extension': 0,
-        'has_unicode_control_char': 0,
-        'special_char_ratio': 0.1,
-        'is_executable_extension': 1,
-        'is_script_extension': 0,
-        'is_macro_document': 0,
-        'is_archive_extension': 0,
-        'is_unknown_extension': 0,
-        'magic_bytes_known': 1,
-        'magic_bytes_valid': 1,
-        'extension_mime_mismatch': 0,
-        'claimed_mime_mismatch': 0,
-        'embedded_file_signature_count': 0,
-        'byte_entropy': 6.5,
-        'header_entropy': 5.8,
-        'printable_ratio': 0.7,
-        'null_byte_ratio': 0.1,
-        'unique_byte_count': 200,
-        'url_count': 3,
-        'ip_address_count': 1,
-        'base64_candidate_count': 0,
-        'suspicious_command_count': 2,
-        'execution_api_count': 5,
-        'network_api_count': 2,
-        'obfuscation_pattern_count': 1,
-        'suspicious_string_count': 4,
-        'archive_entry_count': 0,
-        'executable_entry_count': 0,
-        'script_entry_count': 0,
-        'archive_depth': 0,
-        'compression_ratio': 0.0,
-        'archive_bomb_suspected': 0
-    }
-
-    # 2. 모델 로드 상태 확인
-    if _model_instance is not None:
-        print("✅ [.pkl 모델 성공적 로드] ML 모델 기반 추론을 시작합니다.")
-    else:
-        print("⚠️ [.pkl 모델 로드 실패] Fallback 규칙 기반 추론이 동작합니다.")
-
-    # 3. 예측 함수 실행
-    result = predict_malware_risk(dummy_features)
-
-    # 4. 결과 출력
-    print("\n--- [추론 결과 확인] ---")
-    print(f"• 예측 결과 (prediction): {result['prediction']}")
-    print(f"• 악성 확률 (malware_probability): {result['malware_probability']}")
-    print(f"• 위험도 등급 (risk_level): {result['risk_level']}")
