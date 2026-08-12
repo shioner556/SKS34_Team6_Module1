@@ -318,17 +318,18 @@ def _normalized_suffixes(filename: str) -> list[str]:
         reverse=True,
     )
 
-    suffixes: list[str] = []
+    composite_suffix = ""
     remainder = lower
 
     # 예: sample.tar.gz
     for ext in composite:
         if remainder.endswith(ext):
-            suffixes.append(ext)
+            composite_suffix = ext
             remainder = remainder[: -len(ext)]
             break
 
     # 나머지 부분에서 일반 확장자를 추출한다.
+    suffixes: list[str] = []
     parts = remainder.split(".")
     if len(parts) > 1:
         for part in parts[1:]:
@@ -336,7 +337,10 @@ def _normalized_suffixes(filename: str) -> list[str]:
             if ext in KNOWN_EXTENSIONS:
                 suffixes.append(ext)
 
-    return list(reversed(suffixes))
+    if composite_suffix:
+        suffixes.append(composite_suffix)
+
+    return suffixes
 
 
 def _last_known_extension(filename: str) -> str:
@@ -369,33 +373,32 @@ def _get_magic_info(data: bytes) -> Tuple[Optional[str], Optional[str], set[str]
 
 
 def _magic_matches_extension(filename: str, magic_extensions: set[str]) -> int:
-    suffixes = _normalized_suffixes(filename)
-    if not suffixes or not magic_extensions:
+    final_extension = _last_known_extension(filename)
+    if not final_extension or not magic_extensions:
         return 0
 
-    # 확장자가 알려진 형식이고 Magic Bytes도 알려진 경우에만 비교.
-    return int(any(ext in magic_extensions for ext in suffixes))
+    # 사용자에게 표시되는 마지막 확장자와 실제 형식을 비교.
+    return int(final_extension in magic_extensions)
 
 
 def _mime_matches_extension(filename: str, mime_type: Optional[str]) -> int:
     if not mime_type:
         return 0
 
-    suffixes = _normalized_suffixes(filename)
-    if not suffixes:
+    final_extension = _last_known_extension(filename)
+    if not final_extension:
         return 0
 
     mime = mime_type.lower().split(";", 1)[0].strip()
 
     if mime in MIME_EXTENSION_MAP:
-        return int(any(ext in MIME_EXTENSION_MAP[mime] for ext in suffixes))
+        return int(final_extension in MIME_EXTENSION_MAP[mime])
 
     # python-magic이 특정 MIME을 반환하더라도 표에 없는 경우에는
     # mimetypes의 일반적인 추정을 보조적으로 사용한다.
-    for ext in suffixes:
-        guessed, _ = mimetypes.guess_type("x" + ext)
-        if guessed and guessed == mime:
-            return 1
+    guessed, _ = mimetypes.guess_type("x" + final_extension)
+    if guessed and guessed == mime:
+        return 1
 
     return 0
 
@@ -503,7 +506,8 @@ def analyze_file_type(
     )
 
     if claimed_mime is None:
-        claimed_mime_mismatch = 0
+        # Content-Type이 제공되지 않은 경우와 정상 일치(0)를 구분한다.
+        claimed_mime_mismatch = None
     else:
         claimed = claimed_mime.lower().split(";", 1)[0].strip()
         actual = (detected_mime or "").lower().split(";", 1)[0].strip()
@@ -827,7 +831,7 @@ def _zip_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
     except OSError:
         return 0, 0, 0, 0, 0.0, 0
 
-    return _zip_stats_from_bytes(data, depth=1)
+    return _zip_stats_from_bytes(data, depth=0)
 
 
 def _rar_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
@@ -836,7 +840,7 @@ def _rar_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
     rarfile는 환경에 따라 외부 unrar/bsdtar 프로그램이 필요할 수 있다.
     """
     if rarfile is None:
-        return 0, 0, 0, 1, 0.0, 0
+        return 0, 0, 0, 0, 0.0, 0
 
     try:
         with rarfile.RarFile(str(file_path)) as rf:
@@ -880,13 +884,13 @@ def _rar_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
                 entry_count,
                 executable_count,
                 script_count,
-                1,
+                0,
                 ratio,
                 bomb,
             )
 
     except Exception:
-        return 0, 0, 0, 1, 0.0, 0
+        return 0, 0, 0, 0, 0.0, 0
 
 
 def _seven_zip_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
@@ -894,7 +898,7 @@ def _seven_zip_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
     7z 분석은 py7zr가 설치된 경우에만 수행한다.
     """
     if py7zr is None:
-        return 0, 0, 0, 1, 0.0, 0
+        return 0, 0, 0, 0, 0.0, 0
 
     try:
         with py7zr.SevenZipFile(str(file_path), mode="r") as archive:
@@ -918,13 +922,13 @@ def _seven_zip_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
                 entry_count,
                 executable_count,
                 script_count,
-                1,
+                0,
                 0.0,
                 int(entry_count > ARCHIVE_MAX_ENTRIES),
             )
 
     except Exception:
-        return 0, 0, 0, 1, 0.0, 0
+        return 0, 0, 0, 0, 0.0, 0
 
 
 def analyze_archive(
@@ -982,7 +986,7 @@ def analyze_archive(
         entry_count = 0
         executable_count = 0
         script_count = 0
-        depth = 1
+        depth = 0
         ratio = 0.0
         bomb = 0
 
