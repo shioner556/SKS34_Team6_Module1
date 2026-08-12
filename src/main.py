@@ -17,6 +17,9 @@ def launch_predict(features):
 def launch_analyze_with_agent(features, prediction):
     """3단계: OpenAI Agent 분석"""
     print("[3단계] Agent 분석 시작")
+    # main 브랜치 머지 후 아래 주석 해제
+    # from src.ml.predict import predict_malware_risk_json
+    # prediction = json.loads(predict_malware_risk_json(features))
     result = analyze_with_agent(features, prediction)
     return result
 
