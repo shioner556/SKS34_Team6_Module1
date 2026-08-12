@@ -1,6 +1,107 @@
-# 2단계 머신러닝 과정입니다.
-# 이 곳은 학습이 완료된 머신러닝 모델을 사용하는 부분입니다.
+# 1단계 전처리(preprocess) 결과 피처를 입력받아 학습된 모델 파일(.pkl)을 이용해 악성 확률을 계산하는 코드
 
-def predict(features):
-    """ML 모델을 이용한 악성 위험도 예측"""
-    pass
+import os
+import joblib
+import pandas as pd
+import json
+
+# 저장된 모델 경로 (상대 경로 지정)
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "../../models/random_forest.pkl")
+
+# 1단계 정적 분석(preprocess) 결과의 수치형 피처 
+FEATURE_COLUMNS = [
+    'file_size', 'filename_length', 'extension_count', 'has_double_extension',
+    'has_uppercase_extension', 'has_unicode_control_char', 'special_char_ratio',
+    'is_executable_extension', 'is_script_extension', 'is_macro_document',
+    'is_archive_extension', 'is_unknown_extension', 'magic_bytes_known',
+    'magic_bytes_valid', 'extension_mime_mismatch', 'claimed_mime_mismatch',
+    'embedded_file_signature_count', 'byte_entropy', 'header_entropy',
+    'printable_ratio', 'null_byte_ratio', 'unique_byte_count', 'url_count',
+    'ip_address_count', 'base64_candidate_count', 'suspicious_command_count',
+    'execution_api_count', 'network_api_count', 'obfuscation_pattern_count',
+    'suspicious_string_count', 'archive_entry_count', 'executable_entry_count',
+    'script_entry_count', 'archive_depth', 'compression_ratio', 'archive_bomb_suspected'
+]
+
+def load_model():
+    """
+    pkl 모델 파일 로드 (파일이 없을 경우 None 반환)
+    """
+    if os.path.exists(MODEL_PATH):
+        try:
+            return joblib.load(MODEL_PATH)
+        except Exception as e:
+            print(f"[ML Module Error] 모델 로딩 실패: {e}")
+            return None
+    return None
+
+# 모듈 로드 시 모델 1회 캐싱
+_model_instance = load_model()
+
+
+def predict_malware_risk(ml_features: dict) -> dict:
+    """
+    1단계 preprocess()가 전달한 ml_features(dict)를 입력받아 악성 확률을 추론하는 메인 함수
+    
+    :param ml_features: 1단계 전처리 모듈이 전달한 딕셔너리
+    :return: 추론 결과를 담은 dict
+    """
+    # 1. 입력 피처 데이터를 DataFrame 1줄 형태로 변환
+    df_input = pd.DataFrame([ml_features])
+    
+    # 컬럼 순서 및 존재 여부 보정 (학습 데이터와의 일치성 보장)
+    for col in FEATURE_COLUMNS:
+        if col not in df_input.columns:
+            df_input[col] = 0
+    df_input = df_input[FEATURE_COLUMNS]
+
+    # 2. 모델이 정상적으로 로드된 경우에 -> ML 모델 추론
+    if _model_instance is not None:
+        # Class 1 (악성) 확률 추출
+        prob_percent = round(_model_instance.predict_proba(df_input)[0][1] * 100, 1)
+        prediction = "Malicious" if prob_percent > 50.0 else "Benign"
+    
+    # 3. 모델 파일이 없을 경우 예외 방지용 Fallback (1단계 피처 명칭 기반 룰 스코어링)
+    else:
+        print("[ML Module Warning] 학습된 모델 파일(.pkl)이 없어 기본 규칙 기반 추론으로 대체합니다.")
+        score = 5.0
+        
+        # 1단계 피처 항목 활용
+        danger_cnt = ml_features.get("dangerous_function_count", 0)
+        obfusc_cnt = ml_features.get("obfuscation_function_count", 0)
+        ext_input_cnt = ml_features.get("external_input_count", 0)
+        
+        score += min((danger_cnt * 15) + (obfusc_cnt * 10) + (ext_input_cnt * 5), 50)
+        
+        if ml_features.get("executable_extension", 0) == 1:
+            score += 20
+        if ml_features.get("double_or_multi_extension", 0) == 1 or ml_features.get("extension_mismatch", 0) == 1:
+            score += 25
+            
+        prob_percent = min(score, 99.0)
+        prediction = "Malicious" if prob_percent > 50.0 else "Benign"
+
+    # 상/중/하 위험도 등급 설정
+    if prob_percent >= 80.0:
+        risk_level = "HIGH (상)"
+    elif prob_percent >= 40.0:
+        risk_level = "MEDIUM (중)"
+    else:
+        risk_level = "LOW (하)"
+
+    # 4. 결과 반환 (dict로 포맷)
+    return {
+        "prediction": prediction,
+        "malware_probability": f"{prob_percent}%",
+        "raw_probability": prob_percent,
+        "risk_level": risk_level,
+        "features_analyzed": ml_features
+    }
+
+
+def predict_malware_risk_json(ml_features: dict) -> str:
+    """
+    OpenAI Agent(Custom Tool) 전용 Wrapper 함수 (JSON 문자열 반환)
+    """
+    result = predict_malware_risk(ml_features)
+    return json.dumps(result, ensure_ascii=False)
