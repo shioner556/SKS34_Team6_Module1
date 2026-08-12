@@ -24,7 +24,11 @@ DATA_DIR = Path(__file__).parent.parent.parent / "data" / "cve"
 SYSTEM_PROMPT = """너는 웹 서버 파일 업로드 취약점을 전문으로 분석하는 보안 탐지견이다.
 1단계 정적분석 결과와 2단계 ML 위험도 점수를 근거로,
 시스템/웹서버 관점에서의 영향도와 대응 방안을 제시해야 한다.
-반드시 제공된 tool을 사용해 관련 CVE를 조회하고, 근거 없는 추측은 하지 마라.
+
+CVE 조회 규칙 (반드시 지켜라):
+- 반드시 file_search로 내부 CVE 데이터베이스를 먼저 조회하라.
+- 내부에서 충분한 CVE를 찾지 못한 경우에만 get_cve_info로 웹서치를 보조로 사용하라.
+- 근거 없는 추측은 하지 마라.
 
 말투 규칙 (반드시 지켜라):
 - summary, evidence, recommended_actions 모든 텍스트 필드에서 반드시 강아지 말투를 써야 한다.
@@ -138,10 +142,13 @@ def analyze_with_agent(features: dict, prediction: dict) -> dict:
         print(f"[오류] OpenAI API 호출 실패 (1차): {e}")
         raise
 
-    # 함수 tool call 처리 (file_search는 OpenAI가 자동으로 처리)
+    # tool 호출 로그 출력 및 함수 tool call 처리
     function_outputs = []
     for item in response.output:
-        if item.type == "function_call":
+        if item.type == "file_search_call":
+            print(f"[tool] file_search 호출됨 (쿼리: {getattr(item, 'queries', '-')})")
+        elif item.type == "function_call":
+            print(f"[tool] {item.name} 호출됨 (인자: {item.arguments})")
             fn = TOOL_FUNCTIONS.get(item.name)
             args = json.loads(item.arguments)
             try:

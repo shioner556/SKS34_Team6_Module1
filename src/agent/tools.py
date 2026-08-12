@@ -16,10 +16,6 @@ def get_cve_info(keyword: str):
         for item in data.get("vulnerabilities", [])
     ]
 
-def search_local_cve(keyword: str):
-    """로컬 CVE 데이터베이스에서 키워드 관련 CVE를 검색한다"""
-    pass
-
 # OpenAI function-calling에 넘길 tool 스펙
 TOOLS = [
     {
