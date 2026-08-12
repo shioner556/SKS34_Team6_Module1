@@ -1587,7 +1587,9 @@ def preprocess_many(
     """
     results = []
 
-    for file_path in file_paths:
+    for i, file_path in enumerate(file_paths, start=1):
+        
+        print(f"[{i}] / 파일 처리 중: {file_path}")
         key = str(file_path)
         claimed_mime = claimed_mimes.get(key) if claimed_mimes else None
         results.append(
