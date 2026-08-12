@@ -70,7 +70,7 @@ IMAGE_EXTENSIONS = {
 }
 
 EXECUTABLE_EXTENSIONS = {
-    ".exe", ".dll", ".sys", ".scr", ".msi", ".com",
+    ".exe", ".dll", ".sys", ".scr", ".msi", ".com", ".apk", ".jar",
 }
 
 SCRIPT_EXTENSIONS = {
@@ -85,7 +85,7 @@ MACRO_DOCUMENT_EXTENSIONS = {
 
 ARCHIVE_EXTENSIONS = {
     ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz",
-    ".tar.gz", ".tar.bz2", ".tar.xz",
+    ".tar.gz", ".tar.bz2", ".tar.xz", ".apk", ".jar",
 }
 
 KNOWN_EXTENSIONS = (
@@ -141,6 +141,21 @@ MIME_EXTENSION_MAP = {
     "application/pdf": {".pdf"},
     "application/zip": {".zip"},
     "application/x-zip-compressed": {".zip"},
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        {".docx"},
+    "application/vnd.ms-word.document.macroenabled.12": {".docm"},
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+        {".xlsx"},
+    "application/vnd.ms-excel.sheet.macroenabled.12": {".xlsm"},
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+        {".pptx"},
+    "application/vnd.ms-powerpoint.presentation.macroenabled.12": {".pptm"},
+    "application/vnd.hancom.hwpx": {".hwpx"},
+    "application/vnd.oasis.opendocument.text": {".odt"},
+    "application/vnd.oasis.opendocument.spreadsheet": {".ods"},
+    "application/vnd.oasis.opendocument.presentation": {".odp"},
+    "application/java-archive": {".jar"},
+    "application/vnd.android.package-archive": {".apk"},
     "application/vnd.rar": {".rar"},
     "application/x-rar-compressed": {".rar"},
     "application/x-7z-compressed": {".7z"},
@@ -296,6 +311,8 @@ HEADER_SIZE_MAP = {
     ".scr": 4096,
     ".msi": 512,
     ".com": 512,
+    ".apk": 4096,
+    ".jar": 4096,
 
     # 스크립트/소스 텍스트
     ".js": 4096,
@@ -480,6 +497,122 @@ def _get_magic_info(data: bytes) -> Tuple[Optional[str], Optional[str], set[str]
     return format_name, mime_type, extensions
 
 
+def _detect_zip_container(
+    file_path: Path,
+) -> Optional[Tuple[str, str, set[str]]]:
+    """ZIP 내부 구조로 OOXML·HWPX·ODF·JAR·APK 형식을 식별한다."""
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            names = set(zf.namelist())
+
+            # APK도 META-INF/MANIFEST.MF를 포함할 수 있으므로 JAR보다 먼저 검사한다.
+            if "AndroidManifest.xml" in names and (
+                "classes.dex" in names or "resources.arsc" in names
+            ):
+                return (
+                    "apk",
+                    "application/vnd.android.package-archive",
+                    {".apk"},
+                )
+
+            content_types = b""
+            if "[Content_Types].xml" in names:
+                # 형식 식별에 필요한 작은 메타데이터만 제한적으로 읽는다.
+                info = zf.getinfo("[Content_Types].xml")
+                if info.file_size <= 2 * 1024 * 1024:
+                    content_types = zf.read(info).lower()
+
+            if (
+                "[Content_Types].xml" in names
+                and "word/document.xml" in names
+            ):
+                is_macro = b"macroenabled.main+xml" in content_types
+                return (
+                    "docm" if is_macro else "docx",
+                    (
+                        "application/vnd.ms-word.document.macroenabled.12"
+                        if is_macro
+                        else "application/vnd.openxmlformats-officedocument."
+                             "wordprocessingml.document"
+                    ),
+                    {".docm"} if is_macro else {".docx"},
+                )
+
+            if (
+                "[Content_Types].xml" in names
+                and "xl/workbook.xml" in names
+            ):
+                is_macro = b"macroenabled.main+xml" in content_types
+                return (
+                    "xlsm" if is_macro else "xlsx",
+                    (
+                        "application/vnd.ms-excel.sheet.macroenabled.12"
+                        if is_macro
+                        else "application/vnd.openxmlformats-officedocument."
+                             "spreadsheetml.sheet"
+                    ),
+                    {".xlsm"} if is_macro else {".xlsx"},
+                )
+
+            if (
+                "[Content_Types].xml" in names
+                and "ppt/presentation.xml" in names
+            ):
+                is_macro = b"macroenabled.main+xml" in content_types
+                return (
+                    "pptm" if is_macro else "pptx",
+                    (
+                        "application/vnd.ms-powerpoint.presentation."
+                        "macroenabled.12"
+                        if is_macro
+                        else "application/vnd.openxmlformats-officedocument."
+                             "presentationml.presentation"
+                    ),
+                    {".pptm"} if is_macro else {".pptx"},
+                )
+
+            if (
+                "Contents/content.hpf" in names
+                and any(name.startswith("META-INF/") for name in names)
+            ):
+                return "hwpx", "application/vnd.hancom.hwpx", {".hwpx"}
+
+            if "mimetype" in names:
+                info = zf.getinfo("mimetype")
+                if info.file_size <= 1024:
+                    odf_mime = zf.read(info).decode("ascii", errors="ignore").strip()
+                    odf_types = {
+                        "application/vnd.oasis.opendocument.text": ("odt", {".odt"}),
+                        "application/vnd.oasis.opendocument.spreadsheet": ("ods", {".ods"}),
+                        "application/vnd.oasis.opendocument.presentation": ("odp", {".odp"}),
+                    }
+                    if odf_mime in odf_types:
+                        format_name, extensions = odf_types[odf_mime]
+                        return format_name, odf_mime, extensions
+
+            if "META-INF/MANIFEST.MF" in names:
+                return "jar", "application/java-archive", {".jar"}
+    except (zipfile.BadZipFile, KeyError, OSError, RuntimeError, ValueError):
+        return None
+
+    return "zip", "application/zip", {".zip"}
+
+
+def _get_file_format_info(
+    file_path: Path,
+) -> Tuple[Optional[str], Optional[str], set[str]]:
+    """Magic Bytes를 확인하고 ZIP이면 내부 컨테이너 형식까지 판별한다."""
+    head = _read_head(file_path, 64)
+    format_name, mime_type, extensions = _get_magic_info(head)
+    if format_name == "zip":
+        return _detect_zip_container(file_path) or (
+            format_name,
+            mime_type,
+            extensions,
+        )
+    return format_name, mime_type, extensions
+
+
 def _magic_matches_extension(filename: str, magic_extensions: set[str]) -> int:
     final_extension = _last_known_extension(filename)
     if not final_extension or not magic_extensions:
@@ -512,6 +645,15 @@ def _mime_matches_extension(filename: str, mime_type: Optional[str]) -> int:
 
 
 def _detect_mime(file_path: Path) -> Optional[str]:
+    # libmagic이 OOXML 등을 application/zip으로만 반환하는 환경에서도
+    # ZIP 내부 구조를 우선하여 구체적인 MIME을 사용한다.
+    _, container_mime, _ = _get_file_format_info(file_path)
+    if container_mime and container_mime not in {
+        "application/zip",
+        "application/x-zip-compressed",
+    }:
+        return container_mime
+
     if magic is not None:
         try:
             return magic.from_file(str(file_path), mime=True)
@@ -519,8 +661,7 @@ def _detect_mime(file_path: Path) -> Optional[str]:
             pass
 
     # Magic Bytes fallback.
-    head = _read_head(file_path, 64)
-    _, mime_type, _ = _get_magic_info(head)
+    _, mime_type, _ = _get_file_format_info(file_path)
     if mime_type:
         return mime_type
 
@@ -593,8 +734,7 @@ def analyze_file_type(
     path = Path(file_path)
     name = filename or path.name
 
-    head = _read_head(path, 64)
-    _, detected_magic_mime, magic_extensions = _get_magic_info(head)
+    _, detected_magic_mime, magic_extensions = _get_file_format_info(path)
 
     magic_bytes_known = int(detected_magic_mime is not None)
     magic_bytes_valid = (
