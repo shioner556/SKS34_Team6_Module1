@@ -167,9 +167,23 @@ SUSPICIOUS_COMMAND_PATTERNS = [
 ]
 
 EXECUTION_API_PATTERNS = [
+    # PHP / 범용 스크립트 실행 함수
+    r"\bsystem\s*\(",
+    r"\bexec\s*\(",
+    r"\bpassthru\s*\(",
+    r"\bshell_exec\s*\(",
+    r"\bpopen\s*\(",
+    r"\bproc_open\s*\(",
+    r"\bassert\s*\(",
+    # Java/JSP 프로세스 실행
+    r"\bRuntime\s*\.\s*(?:getRuntime\s*\(\s*\)\s*\.)?exec\s*\(",
+    r"\bnew\s+ProcessBuilder\s*\(",
+    # Windows API / 동적 코드 실행
     r"\bCreateProcess(?:A|W)?\s*\(",
     r"\bShellExecute(?:A|W)?\s*\(",
     r"\beval\s*\(",
+    # Classic ASP에서 COM 객체를 통한 프로세스 실행 등에 사용
+    r"\bServer\s*\.\s*CreateObject\s*\(",
 ]
 
 NETWORK_API_PATTERNS = [
@@ -180,7 +194,27 @@ NETWORK_API_PATTERNS = [
 
 OBFUSCATION_PATTERNS = [
     r"\bfromCharCode\s*\(",
+    r"\bbase64_decode\s*\(",
+    r"\bgzinflate\s*\(",
+    r"\bstr_rot13\s*\(",
     r"(?:0x[0-9a-fA-F]{2,}\s*,\s*){4,}0x[0-9a-fA-F]{2,}",
+]
+
+# 웹 요청에서 공격자가 제어할 수 있는 값을 읽는 대표 패턴.
+# 외부 입력 자체는 정상 코드에도 흔하므로 별도 출력 Feature를 추가하지 않고,
+# 기존 37개 구조를 유지한 채 suspicious_string_count에만 반영한다.
+EXTERNAL_INPUT_PATTERNS = [
+    # PHP superglobal
+    r"\$_(?:GET|POST|REQUEST|COOKIE|FILES|SERVER)\s*\[",
+    # Java Servlet / JSP
+    r"\brequest\s*\.\s*(?:getParameter|getParameterValues|getHeader|getCookies)\s*\(",
+    # Classic ASP / ASP.NET
+    r"\bRequest\s*\.\s*(?:Form|QueryString|Cookies|Params)\b",
+    r"\bRequest\s*\(\s*[\"']",
+    # Python 웹 프레임워크
+    r"\brequest\s*\.\s*(?:args|form|json|values|files)\b",
+    # Node.js / Express
+    r"\breq\s*\.\s*(?:query|body|params|cookies)\b",
 ]
 
 URL_PATTERN = re.compile(
@@ -353,6 +387,14 @@ def _count_regex_text(text: str, patterns: Iterable[str]) -> int:
     for pattern in patterns:
         count += len(re.findall(pattern, text, flags=re.IGNORECASE))
     return count
+
+
+def _count_distinct_regex_text(text: str, patterns: Iterable[str]) -> int:
+    """겹치는 패턴이 같은 코드 조각을 중복 집계하지 않도록 센다."""
+    combined = "|".join(f"(?:{pattern})" for pattern in patterns)
+    if not combined:
+        return 0
+    return len(re.findall(combined, text, flags=re.IGNORECASE))
 
 
 def _is_unicode_control_char(ch: str) -> bool:
@@ -719,7 +761,7 @@ def analyze_content(
         text,
         SUSPICIOUS_COMMAND_PATTERNS,
     )
-    execution_api_count = _count_regex_text(
+    execution_api_count = _count_distinct_regex_text(
         text,
         EXECUTION_API_PATTERNS,
     )
@@ -734,13 +776,20 @@ def analyze_content(
         + _count_regex_text(text, OBFUSCATION_PATTERNS)
     )
 
-    # 명세: suspicious_string_count =
-    # suspicious command + execution API + network API + obfuscation pattern
+    # 외부 입력은 정상 웹 애플리케이션에도 자주 나타나므로 독립 출력값으로
+    # 악성도를 과도하게 높이지 않고, 전체 위험 문자열 집계에만 포함한다.
+    external_input_count = _count_distinct_regex_text(
+        text,
+        EXTERNAL_INPUT_PATTERNS,
+    )
+
+    # 기존 37개 Feature 구조를 유지하면서 웹셸 외부 입력 단서까지 합산한다.
     suspicious_string_count = (
         suspicious_command_count
         + execution_api_count
         + network_api_count
         + obfuscation_pattern_count
+        + external_input_count
     )
 
     return {
