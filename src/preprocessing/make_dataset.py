@@ -42,7 +42,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TEST_SAMPLES_DIR = PROJECT_ROOT / "data/raw"
 BENIGN_DIR = TEST_SAMPLES_DIR / "benign"
 MALWARE_DIR = TEST_SAMPLES_DIR / "malware"
-DEFAULT_OUTPUT = PROJECT_ROOT / "dataset.csv"
+DEFAULT_OUTPUT = PROJECT_ROOT / "data/preprocessed/dataset.csv"
 
 
 def collect_files(directory: Path) -> list[Path]:
