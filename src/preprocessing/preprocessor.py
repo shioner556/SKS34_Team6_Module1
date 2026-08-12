@@ -23,10 +23,14 @@ Magic Bytes 기반 fallback이 사용된다.
 from __future__ import annotations
 
 import base64
+import csv
+import io
+import json
 import math
 import mimetypes
 import re
 import zipfile
+import xml.etree.ElementTree as ET
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
@@ -61,7 +65,7 @@ except ImportError:
 DOCUMENT_EXTENSIONS = {
     ".pdf", ".doc", ".docx", ".docm", ".xls", ".xlsx", ".xlsm",
     ".ppt", ".pptx", ".pptm", ".txt", ".rtf", ".odt", ".ods", ".odp",
-    ".csv", ".hwp", ".hwpx",
+    ".hwp", ".hwpx",
 }
 
 IMAGE_EXTENSIONS = {
@@ -88,6 +92,19 @@ ARCHIVE_EXTENSIONS = {
     ".tar.gz", ".tar.bz2", ".tar.xz", ".apk", ".jar",
 }
 
+AUDIO_EXTENSIONS = {
+    ".mp3", ".wav", ".flac", ".m4a", ".ogg",
+}
+
+VIDEO_EXTENSIONS = {
+    ".mp4", ".mov", ".avi", ".mkv", ".webm",
+}
+
+DATA_EXTENSIONS = {
+    ".csv", ".json", ".xml", ".yaml", ".yml",
+    ".db", ".sqlite", ".sqlite3",
+}
+
 KNOWN_EXTENSIONS = (
     DOCUMENT_EXTENSIONS
     | IMAGE_EXTENSIONS
@@ -95,6 +112,9 @@ KNOWN_EXTENSIONS = (
     | SCRIPT_EXTENSIONS
     | MACRO_DOCUMENT_EXTENSIONS
     | ARCHIVE_EXTENSIONS
+    | AUDIO_EXTENSIONS
+    | VIDEO_EXTENSIONS
+    | DATA_EXTENSIONS
 )
 
 # 확장자 -> category
@@ -114,6 +134,12 @@ for _ext in MACRO_DOCUMENT_EXTENSIONS:
     EXTENSION_CATEGORY[_ext] = "document"
 for _ext in ARCHIVE_EXTENSIONS:
     EXTENSION_CATEGORY[_ext] = "archive"
+for _ext in AUDIO_EXTENSIONS:
+    EXTENSION_CATEGORY[_ext] = "audio"
+for _ext in VIDEO_EXTENSIONS:
+    EXTENSION_CATEGORY[_ext] = "video"
+for _ext in DATA_EXTENSIONS:
+    EXTENSION_CATEGORY[_ext] = "data"
 
 
 # Magic Bytes -> (format_name, mime_type, representative_extensions)
@@ -134,6 +160,14 @@ MAGIC_SIGNATURES = {
     b"\x1f\x8b": ("gzip", "application/gzip", {".gz", ".tar.gz"}),
     b"BZh": ("bzip2", "application/x-bzip2", {".bz2", ".tar.bz2"}),
     b"\xfd7zXZ\x00": ("xz", "application/x-xz", {".xz", ".tar.xz"}),
+    b"ID3": ("mp3", "audio/mpeg", {".mp3"}),
+    b"fLaC": ("flac", "audio/flac", {".flac"}),
+    b"OggS": ("ogg", "audio/ogg", {".ogg"}),
+    b"SQLite format 3\x00": (
+        "sqlite",
+        "application/vnd.sqlite3",
+        {".db", ".sqlite", ".sqlite3"},
+    ),
 }
 
 # MIME -> extensions that are considered compatible.
@@ -171,6 +205,25 @@ MIME_EXTENSION_MAP = {
     "image/tiff": {".tif", ".tiff"},
     "application/vnd.microsoft.portable-executable":
         {".exe", ".dll", ".sys", ".scr", ".com"},
+    "audio/mpeg": {".mp3"},
+    "audio/wav": {".wav"},
+    "audio/x-wav": {".wav"},
+    "audio/flac": {".flac"},
+    "audio/mp4": {".m4a"},
+    "audio/ogg": {".ogg"},
+    "application/ogg": {".ogg"},
+    "video/mp4": {".mp4"},
+    "video/quicktime": {".mov"},
+    "video/x-msvideo": {".avi"},
+    "video/x-matroska": {".mkv"},
+    "video/webm": {".webm"},
+    "text/csv": {".csv"},
+    "application/json": {".json"},
+    "application/xml": {".xml"},
+    "text/xml": {".xml"},
+    "application/yaml": {".yaml", ".yml"},
+    "text/yaml": {".yaml", ".yml"},
+    "application/vnd.sqlite3": {".db", ".sqlite", ".sqlite3"},
 }
 
 # 위험 문자열 탐지 패턴.
@@ -288,7 +341,6 @@ HEADER_SIZE_MAP = {
     ".odt": 4096,
     ".ods": 4096,
     ".odp": 4096,
-    ".csv": 4096,
     ".hwp": 512,
     ".hwpx": 4096,
 
@@ -350,6 +402,30 @@ HEADER_SIZE_MAP = {
     ".tar.gz": 64,
     ".tar.bz2": 64,
     ".tar.xz": 64,
+
+    # 오디오
+    ".mp3": 4096,
+    ".wav": 64,
+    ".flac": 64,
+    ".m4a": 4096,
+    ".ogg": 4096,
+
+    # 비디오
+    ".mp4": 4096,
+    ".mov": 4096,
+    ".avi": 64,
+    ".mkv": 4096,
+    ".webm": 4096,
+
+    # 데이터
+    ".csv": 4096,
+    ".json": 4096,
+    ".xml": 4096,
+    ".yaml": 4096,
+    ".yml": 4096,
+    ".db": 64,
+    ".sqlite": 64,
+    ".sqlite3": 64,
 }
 
 DEFAULT_HEADER_SIZE = 4096
@@ -359,6 +435,16 @@ _MISSING_HEADER_SIZE_EXTENSIONS = KNOWN_EXTENSIONS - HEADER_SIZE_MAP.keys()
 if _MISSING_HEADER_SIZE_EXTENSIONS:
     missing = ", ".join(sorted(_MISSING_HEADER_SIZE_EXTENSIONS))
     raise RuntimeError(f"HEADER_SIZE_MAP에 없는 확장자: {missing}")
+
+_MISSING_CATEGORY_EXTENSIONS = KNOWN_EXTENSIONS - EXTENSION_CATEGORY.keys()
+if _MISSING_CATEGORY_EXTENSIONS:
+    missing = ", ".join(sorted(_MISSING_CATEGORY_EXTENSIONS))
+    raise RuntimeError(f"EXTENSION_CATEGORY에 없는 확장자: {missing}")
+
+_EXTRA_HEADER_SIZE_EXTENSIONS = HEADER_SIZE_MAP.keys() - KNOWN_EXTENSIONS
+if _EXTRA_HEADER_SIZE_EXTENSIONS:
+    extra = ", ".join(sorted(_EXTRA_HEADER_SIZE_EXTENSIONS))
+    raise RuntimeError(f"KNOWN_EXTENSIONS에 없는 Header Size 확장자: {extra}")
 
 # Archive bomb 판정용 기준.
 # 실제 프로젝트에서는 데이터셋 특성에 맞춰 별도 설정 파일로 분리하는 것을 권장.
@@ -483,7 +569,116 @@ def _detect_extension_category(filename: str) -> str:
     return EXTENSION_CATEGORY.get(ext, "unknown")
 
 
+def _get_structured_binary_format_info(
+    data: bytes,
+) -> Optional[Tuple[str, str, set[str]]]:
+    """고정된 0번 위치만으로 판별할 수 없는 컨테이너 형식을 식별한다."""
+    if len(data) >= 12 and data[:4] == b"RIFF":
+        form_type = data[8:12]
+        if form_type == b"WAVE":
+            return "wav", "audio/wav", {".wav"}
+        if form_type == b"AVI ":
+            return "avi", "video/x-msvideo", {".avi"}
+
+    # ISO Base Media File Format: size(4 bytes) 다음에 ftyp이 위치한다.
+    if len(data) >= 12 and data[4:8] == b"ftyp":
+        brand = data[8:12]
+        if brand in {b"M4A ", b"M4B ", b"M4P "}:
+            return "m4a", "audio/mp4", {".m4a"}
+        if brand == b"qt  ":
+            return "mov", "video/quicktime", {".mov"}
+        return "mp4", "video/mp4", {".mp4"}
+
+    # MKV와 WebM은 같은 EBML 헤더를 쓰므로 DocType 문자열을 함께 본다.
+    if data.startswith(b"\x1a\x45\xdf\xa3"):
+        lowered = data.lower()
+        if b"webm" in lowered:
+            return "webm", "video/webm", {".webm"}
+        if b"matroska" in lowered:
+            return "mkv", "video/x-matroska", {".mkv"}
+        return "ebml", "video/x-matroska", {".mkv", ".webm"}
+
+    # ID3 태그가 없는 MP3는 MPEG Audio Frame Sync로 시작할 수 있다.
+    if len(data) >= 2 and data[0] == 0xFF and (data[1] & 0xE0) == 0xE0:
+        layer_bits = (data[1] >> 1) & 0x03
+        bitrate_index = (data[2] >> 4) & 0x0F if len(data) >= 3 else 0
+        sample_rate_index = (data[2] >> 2) & 0x03 if len(data) >= 3 else 3
+        if layer_bits != 0 and bitrate_index not in {0, 15} and sample_rate_index != 3:
+            return "mp3", "audio/mpeg", {".mp3"}
+
+    return None
+
+
+def _decode_text_sample(data: bytes) -> Optional[str]:
+    """BOM을 고려하여 작은 텍스트 표본을 안전하게 디코딩한다."""
+    if b"\x00" in data[:1024]:
+        return None
+    for encoding in ("utf-8-sig", "utf-16", "cp949"):
+        try:
+            return data.decode(encoding)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return None
+
+
+def _get_structured_text_format_info(
+    data: bytes,
+    expected_extension: str,
+) -> Optional[Tuple[str, str, set[str]]]:
+    """대표 텍스트 데이터 형식을 제한된 표본에서 구조 검증한다."""
+    text = _decode_text_sample(data)
+    if text is None or not text.strip():
+        return None
+
+    stripped = text.lstrip()
+
+    if expected_extension == ".json":
+        try:
+            json.loads(text)
+        except (json.JSONDecodeError, ValueError):
+            return None
+        return "json", "application/json", {".json"}
+
+    if expected_extension == ".xml":
+        try:
+            ET.fromstring(text)
+        except ET.ParseError:
+            return None
+        return "xml", "application/xml", {".xml"}
+
+    if expected_extension in {".yaml", ".yml"}:
+        # PyYAML 의존성을 추가하지 않고 대표적인 YAML 문서 표식을 확인한다.
+        meaningful = [
+            line for line in text.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        if meaningful and (
+            meaningful[0].strip() == "---"
+            or any(re.match(r"^\s*[\w.-]+\s*:\s*.*$", line) for line in meaningful)
+            or any(re.match(r"^\s*-\s+.+$", line) for line in meaningful)
+        ):
+            return "yaml", "application/yaml", {".yaml", ".yml"}
+        return None
+
+    if expected_extension == ".csv":
+        try:
+            sample = text[:4096]
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+            rows = list(csv.reader(io.StringIO(sample), dialect))[:10]
+        except (csv.Error, UnicodeError):
+            return None
+        widths = [len(row) for row in rows if row]
+        if len(widths) >= 2 and widths[0] >= 2 and len(set(widths)) == 1:
+            return "csv", "text/csv", {".csv"}
+
+    return None
+
+
 def _get_magic_info(data: bytes) -> Tuple[Optional[str], Optional[str], set[str]]:
+    structured = _get_structured_binary_format_info(data)
+    if structured is not None:
+        return structured
+
     best = None
     for signature, info in MAGIC_SIGNATURES.items():
         if data.startswith(signature):
@@ -602,7 +797,7 @@ def _get_file_format_info(
     file_path: Path,
 ) -> Tuple[Optional[str], Optional[str], set[str]]:
     """Magic Bytes를 확인하고 ZIP이면 내부 컨테이너 형식까지 판별한다."""
-    head = _read_head(file_path, 64)
+    head = _read_head(file_path, 4096)
     format_name, mime_type, extensions = _get_magic_info(head)
     if format_name == "zip":
         return _detect_zip_container(file_path) or (
@@ -610,6 +805,16 @@ def _get_file_format_info(
             mime_type,
             extensions,
         )
+    if format_name is not None:
+        return format_name, mime_type, extensions
+
+    text_info = _get_structured_text_format_info(
+        head,
+        _last_known_extension(file_path.name),
+    )
+    if text_info is not None:
+        return text_info
+
     return format_name, mime_type, extensions
 
 
