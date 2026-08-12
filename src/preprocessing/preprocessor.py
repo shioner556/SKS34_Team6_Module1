@@ -885,6 +885,8 @@ def analyze_filename(filename: str) -> Dict[str, Any]:
     extension_count = len(suffixes)
     has_double_extension = int(extension_count >= 2)
 
+    extension_category = _detect_extension_category(name)
+
     last_ext = _last_known_extension(name)
     has_uppercase_extension = int(
         bool(last_ext) and any(ch.isupper() for ch in name.rsplit(".", 1)[-1])
@@ -903,6 +905,7 @@ def analyze_filename(filename: str) -> Dict[str, Any]:
         )
         special_char_ratio = special_count / len(name)
 
+
     return {
         "filename_length": len(name),
         "extension_count": extension_count,
@@ -910,7 +913,7 @@ def analyze_filename(filename: str) -> Dict[str, Any]:
         "has_uppercase_extension": has_uppercase_extension,
         "has_unicode_control_char": has_unicode_control_char,
         "special_char_ratio": special_char_ratio,
-        "extension_category": _detect_extension_category(name),
+        "extension_category": int(extension_category == "unknown"),
         "is_executable_extension": int(
             any(ext in EXECUTABLE_EXTENSIONS for ext in suffixes)
         ),
