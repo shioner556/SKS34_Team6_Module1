@@ -15,11 +15,16 @@ def load_dataset(file_path:str) -> pd.DataFrame:
     # 파일이 존재하지 않는 경우 처리
     if not os.path.exists(file_path):
         raise FileNotFoundError(
-            f"학습용 데이터 파일이 존재하지 않습니다 : {file_path}"
+            f"[오류] 학습용 데이터 파일이 존재하지 않습니다 : {file_path}"
         )
 
+    df = pd.read_csv(file_path)
+
+    if df.empty:
+        raise ValueError("[오류] 파일이 비어있습니다.")
+
     print('====== 데이터셋 로드를 완료하였습니다. =====\n')
-    return pd.read_csv(file_path)
+    return df
 
 # 모델 학습   -> feature 내용 파악해서 수정할 것
 def train_model(df:pd.DataFrame):
@@ -37,13 +42,13 @@ def train_model(df:pd.DataFrame):
     drop_cols = ['filename', 'filepath', 'label', 'suspicious_string_count']
 
     # Feature와 Target분리
-    X = df.drop(columns=[col for col in drop_cols if col in df.columns])
+    X = df.drop(columns=[col for col in drop_cols if col in df.columns], errors='ignore')
     y = df['label']
 
     # 학습할 데이터 확인
     print('===============================================================')
     print(f'총 샘플 수 : {len(df)} / 학습에 사용할 Feature 수 : {X.shape[1]}')
-    print('===============================================================')
+    print('===============================================================\n')
 
     # 데이터셋 train과 test로 분리
     X_train, X_test, y_train, y_test = train_test_split(
@@ -59,6 +64,7 @@ def train_model(df:pd.DataFrame):
         random_state=42
     )
     model.fit(X_train, y_train)
+    print('====== 모델 학습 완료 =====\n')
 
     # 예측 및 성능 평가
     y_pred = model.predict(X_test)
@@ -69,8 +75,11 @@ def train_model(df:pd.DataFrame):
     print(classification_report(y_test, y_pred))
 
     # model 저장
-    joblib.dump(model, MODEL_SAVE_PATH)
-    print(f"모델 저장 완료: {MODEL_SAVE_PATH}")
+    try:
+        joblib.dump(model, MODEL_SAVE_PATH)
+        print(f"===== 모델 저장 완료: {MODEL_SAVE_PATH} =====")
+    except Exception as e:
+        raise IOError(f"모델 저장 실패: {e}")
 
 if __name__ == "__main__":
     print("===== trainer.py start ======")
