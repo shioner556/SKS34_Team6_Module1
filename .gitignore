@@ -15,4 +15,4 @@ __pycache__/
 .env
 
 # 데이터 원본 파일
-data/raw/origin
+data/raw
