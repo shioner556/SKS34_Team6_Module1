@@ -218,30 +218,96 @@ EMBEDDED_SIGNATURES = {
     b"\x37\x7a\xbc\xaf\x27\x1c",
 }
 
-# 확장자별 header size mapping.
-# 명세에서 "확장자에 따른 header size mapping 제작"을 요구하므로
-# 여기서는 분석용 기본값을 고정한다.
+# 확장자별 header entropy 계산 범위.
+# 파일 시그니처와 초기 메타데이터/컨테이너 구조가 들어오는 범위를 기준으로
+# 설정한다. 값은 Magic Bytes 자체의 길이가 아니라, header_entropy를 계산할
+# 파일 앞부분의 최대 byte 수이다. 파일이 이보다 작으면 파일 전체를 사용한다.
 HEADER_SIZE_MAP = {
-    ".pdf": 4096,
+    # 문서
+    ".pdf": 1024,
+    ".doc": 512,
+    ".docx": 4096,
+    ".docm": 4096,
+    ".xls": 512,
+    ".xlsx": 4096,
+    ".xlsm": 4096,
+    ".ppt": 512,
+    ".pptx": 4096,
+    ".pptm": 4096,
+    ".txt": 4096,
+    ".rtf": 1024,
+    ".odt": 4096,
+    ".ods": 4096,
+    ".odp": 4096,
+    ".csv": 4096,
+    ".hwp": 512,
+    ".hwpx": 4096,
+
+    # 이미지
     ".jpg": 4096,
     ".jpeg": 4096,
-    ".png": 4096,
-    ".gif": 4096,
-    ".bmp": 4096,
-    ".webp": 4096,
+    ".png": 64,
+    ".gif": 64,
+    ".bmp": 64,
+    ".tif": 64,
+    ".tiff": 64,
+    ".webp": 64,
+    ".ico": 64,
+    ".svg": 4096,
+
+    # 실행 파일
     ".exe": 4096,
     ".dll": 4096,
     ".sys": 4096,
     ".scr": 4096,
+    ".msi": 512,
+    ".com": 512,
+
+    # 스크립트/소스 텍스트
+    ".js": 4096,
+    ".jse": 4096,
+    ".ps1": 4096,
+    ".psm1": 4096,
+    ".vbs": 4096,
+    ".vbe": 4096,
+    ".bat": 4096,
+    ".cmd": 4096,
+    ".sh": 4096,
+    ".bash": 4096,
+    ".py": 4096,
+    ".pl": 4096,
+    ".rb": 4096,
+    ".php": 4096,
+    ".php3": 4096,
+    ".php4": 4096,
+    ".php5": 4096,
+    ".phtml": 4096,
+    ".jsp": 4096,
+    ".jspx": 4096,
+    ".asp": 4096,
+    ".aspx": 4096,
+    ".cgi": 4096,
+
+    # 압축/컨테이너
     ".zip": 4096,
-    ".rar": 4096,
-    ".7z": 4096,
-    ".docx": 4096,
-    ".xlsx": 4096,
-    ".pptx": 4096,
+    ".rar": 64,
+    ".7z": 64,
+    ".tar": 512,
+    ".gz": 64,
+    ".bz2": 64,
+    ".xz": 64,
+    ".tar.gz": 64,
+    ".tar.bz2": 64,
+    ".tar.xz": 64,
 }
 
 DEFAULT_HEADER_SIZE = 4096
+
+# KNOWN_EXTENSIONS와 HEADER_SIZE_MAP이 서로 어긋나는 것을 조기에 탐지한다.
+_MISSING_HEADER_SIZE_EXTENSIONS = KNOWN_EXTENSIONS - HEADER_SIZE_MAP.keys()
+if _MISSING_HEADER_SIZE_EXTENSIONS:
+    missing = ", ".join(sorted(_MISSING_HEADER_SIZE_EXTENSIONS))
+    raise RuntimeError(f"HEADER_SIZE_MAP에 없는 확장자: {missing}")
 
 # Archive bomb 판정용 기준.
 # 실제 프로젝트에서는 데이터셋 특성에 맞춰 별도 설정 파일로 분리하는 것을 권장.
@@ -318,17 +384,18 @@ def _normalized_suffixes(filename: str) -> list[str]:
         reverse=True,
     )
 
-    suffixes: list[str] = []
+    composite_suffix = ""
     remainder = lower
 
     # 예: sample.tar.gz
     for ext in composite:
         if remainder.endswith(ext):
-            suffixes.append(ext)
+            composite_suffix = ext
             remainder = remainder[: -len(ext)]
             break
 
     # 나머지 부분에서 일반 확장자를 추출한다.
+    suffixes: list[str] = []
     parts = remainder.split(".")
     if len(parts) > 1:
         for part in parts[1:]:
@@ -336,7 +403,10 @@ def _normalized_suffixes(filename: str) -> list[str]:
             if ext in KNOWN_EXTENSIONS:
                 suffixes.append(ext)
 
-    return list(reversed(suffixes))
+    if composite_suffix:
+        suffixes.append(composite_suffix)
+
+    return suffixes
 
 
 def _last_known_extension(filename: str) -> str:
@@ -369,33 +439,32 @@ def _get_magic_info(data: bytes) -> Tuple[Optional[str], Optional[str], set[str]
 
 
 def _magic_matches_extension(filename: str, magic_extensions: set[str]) -> int:
-    suffixes = _normalized_suffixes(filename)
-    if not suffixes or not magic_extensions:
+    final_extension = _last_known_extension(filename)
+    if not final_extension or not magic_extensions:
         return 0
 
-    # 확장자가 알려진 형식이고 Magic Bytes도 알려진 경우에만 비교.
-    return int(any(ext in magic_extensions for ext in suffixes))
+    # 사용자에게 표시되는 마지막 확장자와 실제 형식을 비교.
+    return int(final_extension in magic_extensions)
 
 
 def _mime_matches_extension(filename: str, mime_type: Optional[str]) -> int:
     if not mime_type:
         return 0
 
-    suffixes = _normalized_suffixes(filename)
-    if not suffixes:
+    final_extension = _last_known_extension(filename)
+    if not final_extension:
         return 0
 
     mime = mime_type.lower().split(";", 1)[0].strip()
 
     if mime in MIME_EXTENSION_MAP:
-        return int(any(ext in MIME_EXTENSION_MAP[mime] for ext in suffixes))
+        return int(final_extension in MIME_EXTENSION_MAP[mime])
 
     # python-magic이 특정 MIME을 반환하더라도 표에 없는 경우에는
     # mimetypes의 일반적인 추정을 보조적으로 사용한다.
-    for ext in suffixes:
-        guessed, _ = mimetypes.guess_type("x" + ext)
-        if guessed and guessed == mime:
-            return 1
+    guessed, _ = mimetypes.guess_type("x" + final_extension)
+    if guessed and guessed == mime:
+        return 1
 
     return 0
 
@@ -503,7 +572,8 @@ def analyze_file_type(
     )
 
     if claimed_mime is None:
-        claimed_mime_mismatch = 0
+        # Content-Type이 제공되지 않은 경우와 정상 일치(0)를 구분한다.
+        claimed_mime_mismatch = None
     else:
         claimed = claimed_mime.lower().split(";", 1)[0].strip()
         actual = (detected_mime or "").lower().split(";", 1)[0].strip()
@@ -827,7 +897,7 @@ def _zip_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
     except OSError:
         return 0, 0, 0, 0, 0.0, 0
 
-    return _zip_stats_from_bytes(data, depth=1)
+    return _zip_stats_from_bytes(data, depth=0)
 
 
 def _rar_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
@@ -836,7 +906,7 @@ def _rar_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
     rarfile는 환경에 따라 외부 unrar/bsdtar 프로그램이 필요할 수 있다.
     """
     if rarfile is None:
-        return 0, 0, 0, 1, 0.0, 0
+        return 0, 0, 0, 0, 0.0, 0
 
     try:
         with rarfile.RarFile(str(file_path)) as rf:
@@ -880,13 +950,13 @@ def _rar_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
                 entry_count,
                 executable_count,
                 script_count,
-                1,
+                0,
                 ratio,
                 bomb,
             )
 
     except Exception:
-        return 0, 0, 0, 1, 0.0, 0
+        return 0, 0, 0, 0, 0.0, 0
 
 
 def _seven_zip_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
@@ -894,7 +964,7 @@ def _seven_zip_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
     7z 분석은 py7zr가 설치된 경우에만 수행한다.
     """
     if py7zr is None:
-        return 0, 0, 0, 1, 0.0, 0
+        return 0, 0, 0, 0, 0.0, 0
 
     try:
         with py7zr.SevenZipFile(str(file_path), mode="r") as archive:
@@ -918,13 +988,13 @@ def _seven_zip_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
                 entry_count,
                 executable_count,
                 script_count,
-                1,
+                0,
                 0.0,
                 int(entry_count > ARCHIVE_MAX_ENTRIES),
             )
 
     except Exception:
-        return 0, 0, 0, 1, 0.0, 0
+        return 0, 0, 0, 0, 0.0, 0
 
 
 def analyze_archive(
@@ -982,7 +1052,7 @@ def analyze_archive(
         entry_count = 0
         executable_count = 0
         script_count = 0
-        depth = 1
+        depth = 0
         ratio = 0.0
         bomb = 0
 
