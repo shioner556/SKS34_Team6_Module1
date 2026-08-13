@@ -75,8 +75,8 @@ def predict_malware_risk(ml_features: dict) -> dict:
         if col not in df_input.columns:
             df_input[col] = 0
 
-    # 모델 학습 피처 순서와 동일하게 정렬
-    df_input = df_input[required_columns]
+    # 결측치(NaN) 0으로 채우기 및 모델 학습 피처 순서와 동일하게 정렬
+    df_input = df_input[required_columns].fillna(0)
 
     # 2. 모델이 정상 로드된 경우 -> ML 모델 추론
     if _model_instance is not None:
@@ -88,15 +88,15 @@ def predict_malware_risk(ml_features: dict) -> dict:
         print("[ML Module Warning] 학습된 모델 파일(.pkl)이 없어 기본 규칙 기반 추론으로 대체합니다.")
         score = 5.0
         
-        danger_cnt = ml_features.get("dangerous_function_count", 0)
-        obfusc_cnt = ml_features.get("obfuscation_function_count", 0)
-        ext_input_cnt = ml_features.get("external_input_count", 0)
+        suspicious_cmd = ml_features.get("suspicious_command_count", 0)
+        obfusc_pat = ml_features.get("obfuscation_pattern_count", 0)
+        exec_api = ml_features.get("execution_api_count", 0)
         
-        score += min((danger_cnt * 15) + (obfusc_cnt * 10) + (ext_input_cnt * 5), 50)
+        score += min((suspicious_cmd * 15) + (obfusc_pat * 10) + (exec_api * 5), 50)
         
-        if ml_features.get("executable_extension", 0) == 1:
+        if ml_features.get("is_executable_extension", 0) == 1:
             score += 20
-        if ml_features.get("double_or_multi_extension", 0) == 1 or ml_features.get("extension_mismatch", 0) == 1:
+        if ml_features.get("has_double_extension", 0) == 1 or ml_features.get("extension_mime_mismatch", 0) == 1:
             score += 25
             
         prob_percent = min(score, 99.0)
@@ -129,50 +129,38 @@ def predict_malware_risk_json(ml_features: dict) -> str:
 
 
 # ==========================================
-# 모듈 작동 단독 테스트 (1단계 연동 실전 테스트)
+# 폴더 내 모든 파일 배치(Batch) 추론 테스트
 # ==========================================
 if __name__ == "__main__":
-    print("--- [1단계 preprocessor.py 연동 테스트] ---")
+    csv_filename = "dataset.csv"  # 테스트 및 실전 배치 추론용 CSV 파일명 (필요 시 dataset_test.csv 등으로 변경)
+    csv_path = os.path.join(BASE_DIR, "data", "preprocessed", csv_filename)
 
-    # 예비용 dummy_features
-    dummy_features = {
-        'file_size': 102400, 'filename_length': 12, 'extension_count': 1,
-        'has_double_extension': 0, 'has_uppercase_extension': 0, 'has_unicode_control_char': 0,
-        'special_char_ratio': 0.1, 'is_executable_extension': 1, 'is_script_extension': 0,
-        'is_macro_document': 0, 'is_archive_extension': 0, 'is_unknown_extension': 0,
-        'magic_bytes_known': 1, 'magic_bytes_valid': 1, 'extension_mime_mismatch': 0,
-        'claimed_mime_mismatch': 0, 'embedded_file_signature_count': 0, 'byte_entropy': 6.5,
-        'header_entropy': 5.8, 'printable_ratio': 0.7, 'null_byte_ratio': 0.1,
-        'unique_byte_count': 200, 'url_count': 3, 'ip_address_count': 1,
-        'base64_candidate_count': 0, 'suspicious_command_count': 2, 'execution_api_count': 5,
-        'network_api_count': 2, 'obfuscation_pattern_count': 1, 'suspicious_string_count': 4,
-        'archive_entry_count': 0, 'executable_entry_count': 0, 'script_entry_count': 0,
-        'archive_depth': 0, 'compression_ratio': 0.0, 'archive_bomb_suspected': 0
-    }
+    print(f"=== 🚀 {csv_filename} 기반 배치 추론 시작 ===", flush=True)
 
-    # 1. 1단계 전처리 모듈 불러오기 테스트
+    if not os.path.exists(csv_path):
+        print(f"❌ CSV 파일이 존재하지 않습니다: {csv_path}", flush=True)
+        sys.exit(1)
+
     try:
-        from preprocessing.preprocessor import preprocess
-        
-        sample_file = os.path.join(BASE_DIR, "README.md")
-        
-        if os.path.exists(sample_file):
-            print(f"📄 '{sample_file}' 파일로 1단계 피처 추출 시도...")
-            real_features = preprocess(sample_file)
-            print("✅ 1단계 preprocessor.py 피처 추출 성공!")
-        else:
-            print("⚠️ sample_file이 없어 dummy_features로 대체합니다.")
-            real_features = dummy_features
+        # 1. 전처리 완료된 CSV 데이터 읽기
+        df_dataset = pd.read_csv(csv_path)
+        print(f"📊 총 {len(df_dataset)}개 데이터 행(Row) 로드 완료!\n", flush=True)
+
+        # 2. 행 단위로 딕셔너리 변환 후 ML 모델 추론 진행
+        success_cnt = 0
+        for idx, row in df_dataset.iterrows():
+            feature_dict = row.to_dict()
+            
+            # 2단계 ML 모델 추론
+            res = predict_malware_risk(feature_dict)
+
+            # 파일명 또는 인덱스 가져오기
+            file_identifier = feature_dict.get('filename', f"Row #{idx+1}")
+
+            print(f"📄 [{file_identifier}] -> 예측: {res['prediction']} | 확률: {res['malware_probability']} | 위험도: {res['risk_level']}", flush=True)
+            success_cnt += 1
+
+        print(f"\n✅ 총 {success_cnt}개 데이터 추론 완료!", flush=True)
 
     except Exception as e:
-        print(f"⚠️ 1단계 모듈 실행 실패 ({e}), dummy_features로 대체합니다.")
-        real_features = dummy_features
-
-    # 2. 2단계 ML 예측 함수 실행
-    result = predict_malware_risk(real_features)
-
-    # 3. 결과 출력
-    print("\n--- [추론 결과 확인] ---")
-    print(f"• 예측 결과 (prediction): {result['prediction']}")
-    print(f"• 악성 확률 (malware_probability): {result['malware_probability']}")
-    print(f"• 위험도 등급 (risk_level): {result['risk_level']}")
+        print(f"❌ CSV 추론 중 오류 발생: {e}", flush=True)
