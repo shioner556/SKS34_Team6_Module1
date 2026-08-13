@@ -42,8 +42,8 @@ except ImportError:
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 TEST_SAMPLES_DIR = PROJECT_ROOT / "data/raw"
-BENIGN_DIR = TEST_SAMPLES_DIR / "benign"
-MALWARE_DIR = TEST_SAMPLES_DIR / "malware"
+BENIGN_DIR = TEST_SAMPLES_DIR / "benign_dike"
+MALWARE_DIR = TEST_SAMPLES_DIR / "malware_dike"
 DEFAULT_OUTPUT = PROJECT_ROOT / "data/preprocessed/dataset.csv"
 
 
