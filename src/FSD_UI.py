@@ -28,6 +28,12 @@ st.markdown(
     @media (max-width: 640px) {
         .sniff-divider { display: none; }
     }
+    .block-container {
+        background-color: rgba(255, 255, 255, 0.55);
+        border-radius: 16px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+        padding: 2rem 3rem;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -72,15 +78,16 @@ with col1:
 
         placeholder.empty()
         #----------------------------------------
-        # 1단계 (preproccsor.py) 연결코드
+        # 연결코드 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            for uploaded_file in uploaded_files:
-                tmp_path = Path(tmp_dir) / uploaded_file.name
-                tmp_path.write_bytes(uploaded_file.getvalue())
-                result = preprocess(tmp_path)
-        # 출력코
-                with st.expander(f"📄 {uploaded_file.name}"):
-                    st.json(result)
+            with st.container(height=400):
+                for uploaded_file in uploaded_files:
+                    tmp_path = Path(tmp_dir) / uploaded_file.name
+                    tmp_path.write_bytes(uploaded_file.getvalue())
+                    result = preprocess(tmp_path)
+                    with st.expander(f"📄 {uploaded_file.name}"):
+                        # 출력 
+                        st.json(result)
 
 with mid:
     st.markdown(
