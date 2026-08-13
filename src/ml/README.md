@@ -2,6 +2,10 @@
 
 from src.ml.predict import predict_malware_risk, predict_malware_risk_json
 
+연계하실때 predict.py에 있는 predict_malware_risk() 함수가 딕셔너리 및 JSON 형태로 리턴되도록 되어 있어서 UI쪽에서 호출 코드만 붙이기만 하시면 연계됩니다.
+
+
+
 # 1단계에서 생성된 ml_features 딕셔너리 
 ml_features = {
     ...
