@@ -5,9 +5,41 @@ import random
 import streamlit as st
 # 1단계 코드 임포트
 from preprocessor import preprocess
-
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background-image: linear-gradient(rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.75)),
+        url("https://i.imgur.com/u0Ei3uR.png");
+        background-size: cover;
+        background-position: center;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+st.markdown(
+    """
+    <style>
+    hr, div[data-testid="stMarkdownContainer"] hr {
+    border-color: #444 !important;
+    background-color: #444 !important;
+}
+    @media (max-width: 640px) {
+        .sniff-divider { display: none; }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 # 타이틀부분
 st.title('FSD(File-Sniffing-Dog)')
+img_col1, img_col2, img_col3 = st.columns([1, 2, 1])
+with img_col2:
+    st.image(
+        "https://i.imgur.com/iEJON0C.png",
+        width=500,
+    )
 st.write('---')
 st.write('🐶제가 냄새를 맡을 수 있게 파일을 업로드 해주세요!')
 # 파일 업로드 부분
@@ -52,7 +84,7 @@ with col1:
 
 with mid:
     st.markdown(
-        "<div style='border-left: 2px solid #888; height: 300px; margin: 0 auto;'></div>",
+        "<div class = 'sniff-divider' style='border-left: 2px solid #888; height: 300px; margin: 0 auto;'></div>",
         unsafe_allow_html=True,
     )
 
