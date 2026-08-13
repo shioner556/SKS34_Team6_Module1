@@ -48,13 +48,16 @@ st.markdown(
 )
 # 타이틀부분
 st.title('FSD(File-Sniffing-Dog)')
-# 마스코트 이미지
-img_col1, img_col2, img_col3 = st.columns([1, 2, 1])
-with img_col2:
-    st.image(
-        "https://i.imgur.com/iEJON0C.png",
-        width=500,
-    )
+# 마스코트 이미지 (flex로 간격을 직접 지정해서 나란히 붙임)
+st.markdown(
+    """
+    <div style="display:flex; justify-content:center; align-items:center; gap:1px;">
+        <img src="https://i.imgur.com/dI5iVsW.png" width="200">
+        <img src="https://i.imgur.com/iEJON0C.png" width="320">
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 st.write('---')
 st.write('🐶제가 냄새를 맡을 수 있게 파일을 업로드 해주세요!')
 # 파일 업로드 부분
@@ -89,71 +92,61 @@ with col1:
     # 파일 탐지중 메세지 구분
     #---------------------------------------
     if uploaded_files and sniff_clicked :
-        placeholder = st.empty()
         dots = ["", ".", "..", "..."]
-        end_time = time.time() + random.uniform(0,5)
-
-        i = 0
-        while time.time() < end_time :
-            placeholder.markdown(f"🐶📁 가방 겉면 킁킁하는 중...{dots[i % 4]}")
-            time.sleep(0.4)
-            i += 1
-
-        placeholder.empty()
+        total_files = len(uploaded_files)
+        placeholder = st.empty()
+        placeholder.markdown(f"🐶📁 가방 겉면 킁킁하는 중...\n\n(진행도 0/{total_files})")
         #----------------------------------------
         # 연결코드
         with tempfile.TemporaryDirectory() as tmp_dir:
-            with st.container(height=400):
-                for uploaded_file in uploaded_files:
-                    tmp_path = Path(tmp_dir) / uploaded_file.name
-                    tmp_path.write_bytes(uploaded_file.getvalue())
-                    stage1_result = preprocess(tmp_path)
-                    stage2_result = predict_malware_risk(stage1_result)
-                    results.append((uploaded_file.name, stage1_result, stage2_result))
-                    # 상세 결과는 3단계 레포트에서 합쳐서 보여줌
-                    st.write(f"📁 {uploaded_file.name}")
+            for idx, uploaded_file in enumerate(uploaded_files, start=1):
+                tmp_path = Path(tmp_dir) / uploaded_file.name
+                tmp_path.write_bytes(uploaded_file.getvalue())
+                stage1_result = preprocess(tmp_path)
+                stage2_result = predict_malware_risk(stage1_result)
+                results.append((uploaded_file.name, stage1_result, stage2_result))
+                # 1단계 탐지하면서 진행도로 표시
+                placeholder.markdown(
+                    f"🐶📁 가방 겉면 킁킁하는 중...{dots[idx % 4]}\n\n(진행도 {idx}/{total_files})"
+                )
 
-                    # 상세보기 필요할 때(팀원이 보여달라고 할 때) 아래 주석 해제
-                    #with st.expander(f"📄 {uploaded_file.name} 상세보기"):
-                      #st.json(stage1_result)
+                # 상세보기 필요할 때(팀원이 보여달라고 할 때) 아래 주석 해제
+                #with st.expander(f"📄 {uploaded_file.name} 상세보기"):
+                  #st.json(stage1_result)
+        placeholder.empty()
         if results:
-            st.success("가방 확인 완료!")
+            st.success("📁가방 확인 완료!")
 
 with mid:
     st.markdown(
-        "<div class = 'sniff-divider' style='border-left: 2px solid #888; height: 300px; margin: 0 auto;'></div>",
+        "<div class = 'sniff-divider' style='border-left: 2px solid #888; height: 80px; margin: 0 auto;'></div>",
         unsafe_allow_html=True,
     )
-    
+
 
 with col2:
     st.subheader('2단계 결과')
-    if uploaded_files and sniff_clicked :
-        placeholder = st.empty()
+    if uploaded_files and sniff_clicked and results:
+        # 2단계 파일 탐지하면서 진행도로 표시
         dots = ["", ".", "..", "..."]
-        end_time = time.time() + random.uniform(0,5)
-
-        i = 0
-        while time.time() < end_time :
-            placeholder.markdown(f"🐶📂 가방 안까지 킁킁하는 중...{dots[i % 4]}")
+        total_files = len(results)
+        placeholder = st.empty()
+        for idx, (file_name, _, stage2_result) in enumerate(results, start=1):
+            placeholder.markdown(
+                f"🐶📂 가방 안까지 킁킁하는 중...{dots[idx % 4]}\n\n(진행도 {idx}/{total_files})"
+            )
             time.sleep(0.4)
-            i += 1
-        placeholder.empty()
-    if results:
-        with st.container(height=400):
-            for file_name, _, stage2_result in results:
-                st.write(f"📂 {file_name}")
-                # 상세 결과는 3단계 레포트에서 합쳐서 보여줌
 
-                # 상세보기 필요할 때(팀원이 보여달라고 할 때) 아래 주석 해제
-                #with st.expander(f"📄 {file_name} 상세보기"):
-                      #summary = {
-                         #"판정 결과": stage2_result["prediction"],
-                         #"악성 확률": stage2_result["malware_probability"],
-                         #"위험 레벨": stage2_result["risk_level"],
-                      #}
-                      #st.json(summary)
-        st.success("가방 안쪽까지 확인완료!")
+            # 상세보기 필요할 때(팀원이 보여달라고 할 때) 아래 주석 해제
+            #with st.expander(f"📄 {file_name} 상세보기"):
+                  #summary = {
+                     #"판정 결과": stage2_result["prediction"],
+                     #"악성 확률": stage2_result["malware_probability"],
+                     #"위험 레벨": stage2_result["risk_level"],
+                  #}
+                  #st.json(summary)
+        placeholder.empty()
+        st.success("📂가방 안쪽까지 확인완료!")
 
 st.write('---')
  
