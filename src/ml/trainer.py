@@ -66,7 +66,7 @@ def train_model(df:pd.DataFrame):
     X = df.drop(columns=[col for col in drop_cols if col in df.columns], errors='ignore')
     y = df['label']
 
-    # --- [추가] 라벨 분포 및 비율 확인 ---
+    # 라벨 분포 및 비율 확인
     label_counts = y.value_counts()
     label_ratios = y.value_counts(normalize=True) * 100
     
@@ -89,9 +89,9 @@ def train_model(df:pd.DataFrame):
 
     # 하이퍼파라미터 후보군 정의
     param_grid = {
-        'n_estimators': [50, 100, 200],     # 트리의 개수
+        'n_estimators': [50, 100, 200],                 # 트리의 개수
         'max_depth': [8, 10, 12, 15, 20, 25, 30],       # 학습 깊이(과적합 방지)
-        'criterion': ['gini', 'entropy']    # 데이터 분기 기준
+        'criterion': ['gini', 'entropy']                # 데이터 분기 기준
     }
 
     # 5-Fold Stratified Cross-Validation 설정
@@ -179,4 +179,3 @@ if __name__ == "__main__":
     print("===== trainer.py start ======\n")
     df = load_datasets(DATA_DIR_PATH)
     train_model(df)
-
