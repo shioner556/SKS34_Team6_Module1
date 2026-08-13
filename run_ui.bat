@@ -5,7 +5,7 @@ cd /d "%~dp0"
 :: 2. 가상환경 활성화 (프로젝트 루트의 .venv 활성화)
 call .venv\Scripts\activate.bat
 
-:: 3. Streamlit 실행 (src/ui/FSD_UI.py 직접 실행)
-streamlit run src\ui\FSD_UI.py
+:: 3. main.py 실행
+python src\main.py
 
 pause
