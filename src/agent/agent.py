@@ -103,13 +103,30 @@ def _build_tools(vs_id: str | None) -> list:
     return tools
 
 
+def _fallback_report(prediction: dict, error_msg: str) -> dict:
+    """3단계 분석 실패 시 반환할 기본 리포트 (동일 스키마 유지, 예외를 밖으로 던지지 않기 위함)."""
+    risk_level = prediction.get("risk_level")
+    if risk_level not in ["상", "중", "하"]:
+        risk_level = "중"
+
+    return {
+        "risk_level": risk_level,
+        "summary": f"멍... 분석 중 오류가 발생해서 자동 리포트를 만들지 못했습니다. (오류: {error_msg})",
+        "evidence": ["3단계 AI 분석 실패 — 2단계 ML 판단 결과만 참고하세요."],
+        "related_cve": [],
+        "recommended_actions": ["관리자에게 문의하거나 재시도해주세요."]
+    }
+
+
 def analyze_with_agent(features: dict, prediction: dict) -> dict:
-    """3단계: OpenAI Responses API + 벡터스토어로 종합 분석 후 리포트 반환"""
+    """3단계: OpenAI Responses API + 벡터스토어로 종합 분석 후 리포트 반환.
+    실패 시에도 동일 스키마의 fallback 리포트를 반환한다 (예외를 밖으로 던지지 않음)."""
 
-    vs_id = _get_vector_store()
-    tools = _build_tools(vs_id)
+    try:
+        vs_id = _get_vector_store()
+        tools = _build_tools(vs_id)
 
-    user_msg = f"""[1단계 정적분석 결과]
+        user_msg = f"""[1단계 정적분석 결과]
 {json.dumps(features, ensure_ascii=False, indent=2)}
 
 [2단계 ML 판단]
@@ -117,40 +134,35 @@ def analyze_with_agent(features: dict, prediction: dict) -> dict:
 
 위 정보를 바탕으로 위험도, 판단 근거, 관련 CVE, 대응 가이드를 정리해줘."""
 
-    # 1차 호출: file_search(자동) + 함수 tool 사용 여부 판단
-    try:
+        # 1차 호출: file_search(자동) + 함수 tool 사용 여부 판단
         response = client.responses.create(
             model=MODEL,
             instructions=SYSTEM_PROMPT,
             input=user_msg,
             tools=tools
         )
-    except Exception as e:
-        print(f"[오류] OpenAI API 호출 실패 (1차): {e}")
-        raise
 
-    # tool 호출 로그 출력 및 함수 tool call 처리
-    function_outputs = []
-    for item in response.output:
-        if item.type == "file_search_call":
-            print(f"[tool] file_search 호출됨 (쿼리: {getattr(item, 'queries', '-')})")
-        elif item.type == "function_call":
-            print(f"[tool] {item.name} 호출됨 (인자: {item.arguments})")
-            fn = TOOL_FUNCTIONS.get(item.name)
-            args = json.loads(item.arguments)
-            try:
-                result = fn(**args)
-            except Exception as e:
-                result = {"error": str(e)}
-            function_outputs.append({
-                "type": "function_call_output",
-                "call_id": item.call_id,
-                "output": json.dumps(result, ensure_ascii=False)
-            })
+        # tool 호출 로그 출력 및 함수 tool call 처리
+        function_outputs = []
+        for item in response.output:
+            if item.type == "file_search_call":
+                print(f"[tool] file_search 호출됨 (쿼리: {getattr(item, 'queries', '-')})")
+            elif item.type == "function_call":
+                print(f"[tool] {item.name} 호출됨 (인자: {item.arguments})")
+                fn = TOOL_FUNCTIONS.get(item.name)
+                args = json.loads(item.arguments)
+                try:
+                    result = fn(**args)
+                except Exception as e:
+                    result = {"error": str(e)}
+                function_outputs.append({
+                    "type": "function_call_output",
+                    "call_id": item.call_id,
+                    "output": json.dumps(result, ensure_ascii=False)
+                })
 
-    # 2차 호출: 구조화된 최종 리포트 생성
-    final_input = function_outputs if function_outputs else "위 분석을 바탕으로 최종 리포트를 작성해줘."
-    try:
+        # 2차 호출: 구조화된 최종 리포트 생성
+        final_input = function_outputs if function_outputs else "위 분석을 바탕으로 최종 리포트를 작성해줘."
         final = client.responses.create(
             model=MODEL,
             instructions=SYSTEM_PROMPT,
@@ -158,14 +170,15 @@ def analyze_with_agent(features: dict, prediction: dict) -> dict:
             input=final_input,
             text={"format": REPORT_SCHEMA}
         )
+
+        for item in final.output:
+            if item.type == "message":
+                for content in item.content:
+                    if content.type == "output_text":
+                        return json.loads(content.text)
+
+        raise RuntimeError("리포트 생성 실패: 최종 응답에 message가 없음")
+
     except Exception as e:
-        print(f"[오류] OpenAI API 호출 실패 (2차): {e}")
-        raise
-
-    for item in final.output:
-        if item.type == "message":
-            for content in item.content:
-                if content.type == "output_text":
-                    return json.loads(content.text)
-
-    raise RuntimeError("[오류] 리포트 생성에 실패했습니다.")
+        print(f"[오류] 3단계 분석 실패: {e}")
+        return _fallback_report(prediction, str(e))
