@@ -118,8 +118,9 @@ def _fallback_report(prediction: dict, error_msg: str) -> dict:
     }
 
 
-def analyze_with_agent(features: dict, prediction: dict) -> dict:
+def analyze_with_agent(features: dict, prediction: dict, model: str = MODEL) -> dict:
     """3단계: OpenAI Responses API + 벡터스토어로 종합 분석 후 리포트 반환.
+    model: 사용할 OpenAI 모델 (기본값: gpt-4o-mini). UI에서 모델 선택 시 전달.
     실패 시에도 동일 스키마의 fallback 리포트를 반환한다 (예외를 밖으로 던지지 않음)."""
 
     try:
@@ -136,7 +137,7 @@ def analyze_with_agent(features: dict, prediction: dict) -> dict:
 
         # 1차 호출: file_search(자동) + 함수 tool 사용 여부 판단
         response = client.responses.create(
-            model=MODEL,
+            model=model,
             instructions=SYSTEM_PROMPT,
             input=user_msg,
             tools=tools
@@ -164,7 +165,7 @@ def analyze_with_agent(features: dict, prediction: dict) -> dict:
         # 2차 호출: 구조화된 최종 리포트 생성
         final_input = function_outputs if function_outputs else "위 분석을 바탕으로 최종 리포트를 작성해줘."
         final = client.responses.create(
-            model=MODEL,
+            model=model,
             instructions=SYSTEM_PROMPT,
             previous_response_id=response.id,
             input=final_input,
