@@ -1,5 +1,6 @@
 import os
 import json
+import glob
 import joblib
 import pandas as pd
 from datetime import datetime
@@ -8,26 +9,43 @@ from sklearn.metrics import accuracy_score, classification_report
 from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
 
 # dataset, 모델 저장 경로 설정
-DATA_PATH = "data/preprocessed/dataset_train.csv"
+DATA_DIR_PATH = "data/preprocessed/"
 MODEL_SAVE_PATH = "models/random_forest.pkl"
 METADATA_SAVE_PATH = "models/metadata.json"
 
 # 데이터셋 로드 : csv 파일에 대해 데이터셋 로드
-def load_dataset(file_path:str) -> pd.DataFrame:
+def load_datasets(data_dir:str) -> pd.DataFrame:
+    print('===== 데이터셋 로드 시작 =====')
     print('데이터셋 로드중...')
-    # 파일이 존재하지 않는 경우 처리
-    if not os.path.exists(file_path):
+
+    # 경로 안 모든 csv 파일 경로 수집
+    csv_files = glob.glob(os.path.join(data_dir, '*.csv'))
+
+    if not csv_files:
         raise FileNotFoundError(
-            f"[오류] 학습용 데이터 파일이 존재하지 않습니다 : {file_path}"
+            f"[오류] 해당 경로에 csv 파일이 존재하지 않습니다 : {data_dir}"
         )
 
-    df = pd.read_csv(file_path)
+    df_list = []
+    for file_path in csv_files:
+        try:
+            df = pd.read_csv(file_path)
+            if not df.empty:
+                df_list.append(df)
+                print(f'- 파일 로드 완료 : {os.path.basename(file_path)} ({len(df)}개 샘플)')
+        except Exception as e:
+            print(f'[오류] {os.path.basename(file_path)} 파일 읽기 실패: {e}')
 
-    if df.empty:
-        raise ValueError("[오류] 파일이 비어있습니다.")
+    if not df_list:
+        raise ValueError('[오류] 유효한 데이터 파일이 담긴 csv 파일이 없습니다.')
 
-    print('====== 데이터셋 로드를 완료하였습니다. =====\n')
-    return df
+    # 여러 데이터 프레임을 하나로 결합
+    combined_df = pd.concat(df_list, ignore_index=True)
+
+    combined_df = combined_df.drop_duplicates()
+
+    print(f"===== 총 {len(df_list)}개 csv 파일 통합 완료 (총 샘플 수 : {len(combined_df)}) ======\n")
+    return combined_df
 
 # 모델 학습   -> feature 내용 파악해서 수정할 것
 def train_model(df:pd.DataFrame):
@@ -48,9 +66,20 @@ def train_model(df:pd.DataFrame):
     X = df.drop(columns=[col for col in drop_cols if col in df.columns], errors='ignore')
     y = df['label']
 
+    # 라벨 분포 및 비율 확인
+    label_counts = y.value_counts()
+    label_ratios = y.value_counts(normalize=True) * 100
+    
+    malware_cnt = label_counts.get(1, 0)
+    benign_cnt = label_counts.get(0, 0)
+    malware_pct = label_ratios.get(1, 0.0)
+    benign_pct = label_ratios.get(0, 0.0)
+
     # 학습할 데이터 확인
     print('===============================================================')
     print(f'총 샘플 수 : {len(df)} / 학습에 사용할 Feature 수 : {X.shape[1]}')
+    print(f'• 악성(Malware, 1) : {malware_cnt}개 ({malware_pct:.1f}%)')
+    print(f'• 정상(Benign, 0)  : {benign_cnt}개 ({benign_pct:.1f}%)')
     print('===============================================================\n')
 
     # 데이터셋 train과 test로 분리
@@ -60,9 +89,9 @@ def train_model(df:pd.DataFrame):
 
     # 하이퍼파라미터 후보군 정의
     param_grid = {
-        'n_estimators': [50, 100, 200],     # 트리의 개수
-        'max_depth': [8, 10, 12, 15],       # 학습 깊이(과적합 방지)
-        'criterion': ['gini', 'entropy']    # 데이터 분기 기
+        'n_estimators': [50, 100, 200],                 # 트리의 개수
+        'max_depth': [8, 10, 12, 15, 20, 25, 30],       # 학습 깊이(과적합 방지)
+        'criterion': ['gini', 'entropy']                # 데이터 분기 기준
     }
 
     # 5-Fold Stratified Cross-Validation 설정
@@ -148,6 +177,5 @@ def save_training_history(X, y_test, y_pred, grid_search, model):
 # 메인 실행 파트
 if __name__ == "__main__":
     print("===== trainer.py start ======\n")
-    df = load_dataset(DATA_PATH)
+    df = load_datasets(DATA_DIR_PATH)
     train_model(df)
-
