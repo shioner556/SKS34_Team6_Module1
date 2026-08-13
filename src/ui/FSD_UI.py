@@ -58,15 +58,26 @@ with img_col2:
 st.write('---')
 st.write('🐶제가 냄새를 맡을 수 있게 파일을 업로드 해주세요!')
 # 파일 업로드 부분
-upload_col, button_col = st.columns([4,1], vertical_alignment= "center")
+if "uploader_key" not in st.session_state:
+    st.session_state.uploader_key = 0
+
+def _reset_uploader():
+    st.session_state.uploader_key += 1
+
+upload_col, button_col, reset_col = st.columns([4,1,1], vertical_alignment= "center")
 with upload_col:
  uploaded_files = st.file_uploader(
     '파일 업로드',
     accept_multiple_files = True,
-    label_visibility='collapsed'
-    ) 
+    label_visibility='collapsed',
+    key=f"file_uploader_{st.session_state.uploader_key}",
+    )
+ # 탐지 시작 버튼
 with button_col:
  sniff_clicked = st.button('냄새 맡기')
+ # 파일 업로드 초기화 버튼
+with reset_col:
+ st.button('다시 하기', on_click=_reset_uploader)
 st.write('---')
 col1, mid, col2 = st.columns([10, 1, 10])
 
@@ -92,14 +103,19 @@ with col1:
         #----------------------------------------
         # 연결코드
         with tempfile.TemporaryDirectory() as tmp_dir:
-            for uploaded_file in uploaded_files:
-                tmp_path = Path(tmp_dir) / uploaded_file.name
-                tmp_path.write_bytes(uploaded_file.getvalue())
-                stage1_result = preprocess(tmp_path)
-                stage2_result = predict_malware_risk(stage1_result)
-                results.append((uploaded_file.name, stage1_result, stage2_result))
-                # 상세 결과는 3단계 레포트에서 합쳐서 보여줌
-                st.write(f"📁 {uploaded_file.name}")
+            with st.container(height=400):
+                for uploaded_file in uploaded_files:
+                    tmp_path = Path(tmp_dir) / uploaded_file.name
+                    tmp_path.write_bytes(uploaded_file.getvalue())
+                    stage1_result = preprocess(tmp_path)
+                    stage2_result = predict_malware_risk(stage1_result)
+                    results.append((uploaded_file.name, stage1_result, stage2_result))
+                    # 상세 결과는 3단계 레포트에서 합쳐서 보여줌
+                    st.write(f"📁 {uploaded_file.name}")
+
+                    # 상세보기 필요할 때(팀원이 보여달라고 할 때) 아래 주석 해제
+                    #with st.expander(f"📄 {uploaded_file.name} 상세보기"):
+                      #st.json(stage1_result)
         if results:
             st.success("가방 확인 완료!")
 
@@ -124,11 +140,21 @@ with col2:
             i += 1
         placeholder.empty()
     if results:
-        for file_name, _, _ in results:
-            st.write(f"📂 {file_name}")
-            # 상세 결과는 3단계 레포트에서 합쳐서 보여줌
+        with st.container(height=400):
+            for file_name, _, stage2_result in results:
+                st.write(f"📂 {file_name}")
+                # 상세 결과는 3단계 레포트에서 합쳐서 보여줌
+
+                # 상세보기 필요할 때(팀원이 보여달라고 할 때) 아래 주석 해제
+                #with st.expander(f"📄 {file_name} 상세보기"):
+                      #summary = {
+                         #"판정 결과": stage2_result["prediction"],
+                         #"악성 확률": stage2_result["malware_probability"],
+                         #"위험 레벨": stage2_result["risk_level"],
+                      #}
+                      #st.json(summary)
         st.success("가방 안쪽까지 확인완료!")
 
 st.write('---')
-
+ 
 st.subheader('3단계 결과') 
