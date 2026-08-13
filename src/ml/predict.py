@@ -2,6 +2,7 @@
 
 import os
 import sys
+import glob
 import joblib
 import pandas as pd
 import json
@@ -19,8 +20,10 @@ if SRC_DIR not in sys.path:
 if BASE_DIR not in sys.path:
     sys.path.append(BASE_DIR)
 
-# models/random_forest.pkl 경로 조합
-MODEL_PATH = os.path.join(BASE_DIR, "models", "random_forest.pkl")
+# 모델 저장 경로 (malware_rf_model.pkl 및 random_forest.pkl 호환)
+MODEL_PATH = os.path.join(BASE_DIR, "models", "malware_rf_model.pkl")
+if not os.path.exists(MODEL_PATH):
+    MODEL_PATH = os.path.join(BASE_DIR, "models", "random_forest.pkl")
 
 # 1단계 정적 분석(preprocess) 결과의 수치형 피처 목록
 FEATURE_COLUMNS = [
@@ -43,6 +46,7 @@ def load_model():
     """
     if os.path.exists(MODEL_PATH):
         try:
+            print(f"📦 모델 파일 로드 성공: {MODEL_PATH}")
             return joblib.load(MODEL_PATH)
         except Exception as e:
             print(f"[ML Module Error] 모델 로딩 실패: {e}")
@@ -120,18 +124,20 @@ def predict_malware_risk_json(ml_features: dict) -> str:
 # 폴더 내 모든 파일 배치(Batch) 추론 및 성능 검증
 # ==========================================
 if __name__ == "__main__":
-    csv_filename = "dataset_test.csv"
-    csv_path = os.path.join(BASE_DIR, "data", "preprocessed", csv_filename)
+    preprocessed_dir = os.path.join(BASE_DIR, "data", "preprocessed")
+    csv_files = glob.glob(os.path.join(preprocessed_dir, "dataset_*.csv"))
 
-    print(f"=== 🚀 {csv_filename} 기반 배치 추론 및 성능 검증 시작 ===\n", flush=True)
+    print(f"=== 🚀 전체 {len(csv_files)}개 preprocessed CSV 병합 배치 추론 및 성능 검증 시작 ===\n", flush=True)
 
-    if not os.path.exists(csv_path):
-        print(f"❌ CSV 파일이 존재하지 않습니다: {csv_path}", flush=True)
+    if not csv_files:
+        print(f"❌ preprocessed 폴더에 CSV 파일이 존재하지 않습니다: {preprocessed_dir}", flush=True)
         sys.exit(1)
 
     try:
-        df_dataset = pd.read_csv(csv_path)
-        print(f"📊 총 {len(df_dataset)}개 데이터 행(Row) 로드 완료!\n", flush=True)
+        # 모든 dataset_*.csv 파일 불러와 하나로 병합
+        df_list = [pd.read_csv(f) for f in csv_files]
+        df_dataset = pd.concat(df_list, ignore_index=True)
+        print(f"📊 총 {len(df_dataset)}개 병합 데이터 행(Row) 로드 완료!\n", flush=True)
 
         # 정답 라벨 컬럼 자동 감지 ('label', 'target', 'is_malware', 'class')
         label_col = None
@@ -150,16 +156,17 @@ if __name__ == "__main__":
             file_identifier = feature_dict.get('filename', f"Row #{idx+1}")
             pred_label = res['prediction']
 
-            # 정답 라벨 컬럼이 존재하는 경우 매핑 (1/True/'Malicious' -> Malicious, 0/False/'Benign' -> Benign)
             if label_col is not None:
                 raw_label = row[label_col]
-                actual_label = "Malicious" if raw_label in [1, True, "1", "Malicious", "malicious"] else "Benign"
+                actual_label = "Malicious" if str(raw_label).lower() in ["1", "true", "malicious", "malware"] else "Benign"
                 
                 y_true.append(actual_label)
                 y_pred.append(pred_label)
 
                 is_correct = (pred_label == actual_label)
                 status = "✅" if is_correct else "❌"
+                
+                # 📌 개별 데이터 추론 결과 실시간 출력
                 print(f"{status} [{file_identifier}] -> 예측: {pred_label} (실제: {actual_label}) | 확률: {res['malware_probability']} | 위험도: {res['risk_level']}", flush=True)
             else:
                 print(f"📄 [{file_identifier}] -> 예측: {pred_label} | 확률: {res['malware_probability']} | 위험도: {res['risk_level']}", flush=True)
