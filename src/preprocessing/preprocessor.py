@@ -2,7 +2,7 @@
 Static File Feature Extractor
 =============================
 
-Output Feature 명세(37개)를 기준으로 파일 하나에서 정적 Feature를 추출한다.
+Output Feature 명세(38개)를 기준으로 파일 하나에서 정적 Feature를 추출한다.
 
 원칙:
 - 파일을 실행하지 않는다.
@@ -23,10 +23,14 @@ Magic Bytes 기반 fallback이 사용된다.
 from __future__ import annotations
 
 import base64
+import csv
+import io
+import json
 import math
 import mimetypes
 import re
 import zipfile
+import xml.etree.ElementTree as ET
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
@@ -61,7 +65,7 @@ except ImportError:
 DOCUMENT_EXTENSIONS = {
     ".pdf", ".doc", ".docx", ".docm", ".xls", ".xlsx", ".xlsm",
     ".ppt", ".pptx", ".pptm", ".txt", ".rtf", ".odt", ".ods", ".odp",
-    ".csv", ".hwp", ".hwpx",
+    ".hwp", ".hwpx",
 }
 
 IMAGE_EXTENSIONS = {
@@ -70,7 +74,7 @@ IMAGE_EXTENSIONS = {
 }
 
 EXECUTABLE_EXTENSIONS = {
-    ".exe", ".dll", ".sys", ".scr", ".msi", ".com",
+    ".exe", ".dll", ".sys", ".scr", ".msi", ".com", ".apk", ".jar",
 }
 
 SCRIPT_EXTENSIONS = {
@@ -85,7 +89,20 @@ MACRO_DOCUMENT_EXTENSIONS = {
 
 ARCHIVE_EXTENSIONS = {
     ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz",
-    ".tar.gz", ".tar.bz2", ".tar.xz",
+    ".tar.gz", ".tar.bz2", ".tar.xz", ".apk", ".jar",
+}
+
+AUDIO_EXTENSIONS = {
+    ".mp3", ".wav", ".flac", ".m4a", ".ogg",
+}
+
+VIDEO_EXTENSIONS = {
+    ".mp4", ".mov", ".avi", ".mkv", ".webm",
+}
+
+DATA_EXTENSIONS = {
+    ".csv", ".json", ".xml", ".yaml", ".yml",
+    ".db", ".sqlite", ".sqlite3",
 }
 
 KNOWN_EXTENSIONS = (
@@ -95,6 +112,9 @@ KNOWN_EXTENSIONS = (
     | SCRIPT_EXTENSIONS
     | MACRO_DOCUMENT_EXTENSIONS
     | ARCHIVE_EXTENSIONS
+    | AUDIO_EXTENSIONS
+    | VIDEO_EXTENSIONS
+    | DATA_EXTENSIONS
 )
 
 # 확장자 -> category
@@ -114,6 +134,12 @@ for _ext in MACRO_DOCUMENT_EXTENSIONS:
     EXTENSION_CATEGORY[_ext] = "document"
 for _ext in ARCHIVE_EXTENSIONS:
     EXTENSION_CATEGORY[_ext] = "archive"
+for _ext in AUDIO_EXTENSIONS:
+    EXTENSION_CATEGORY[_ext] = "audio"
+for _ext in VIDEO_EXTENSIONS:
+    EXTENSION_CATEGORY[_ext] = "video"
+for _ext in DATA_EXTENSIONS:
+    EXTENSION_CATEGORY[_ext] = "data"
 
 
 # Magic Bytes -> (format_name, mime_type, representative_extensions)
@@ -134,6 +160,14 @@ MAGIC_SIGNATURES = {
     b"\x1f\x8b": ("gzip", "application/gzip", {".gz", ".tar.gz"}),
     b"BZh": ("bzip2", "application/x-bzip2", {".bz2", ".tar.bz2"}),
     b"\xfd7zXZ\x00": ("xz", "application/x-xz", {".xz", ".tar.xz"}),
+    b"ID3": ("mp3", "audio/mpeg", {".mp3"}),
+    b"fLaC": ("flac", "audio/flac", {".flac"}),
+    b"OggS": ("ogg", "audio/ogg", {".ogg"}),
+    b"SQLite format 3\x00": (
+        "sqlite",
+        "application/vnd.sqlite3",
+        {".db", ".sqlite", ".sqlite3"},
+    ),
 }
 
 # MIME -> extensions that are considered compatible.
@@ -141,6 +175,21 @@ MIME_EXTENSION_MAP = {
     "application/pdf": {".pdf"},
     "application/zip": {".zip"},
     "application/x-zip-compressed": {".zip"},
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        {".docx"},
+    "application/vnd.ms-word.document.macroenabled.12": {".docm"},
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+        {".xlsx"},
+    "application/vnd.ms-excel.sheet.macroenabled.12": {".xlsm"},
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+        {".pptx"},
+    "application/vnd.ms-powerpoint.presentation.macroenabled.12": {".pptm"},
+    "application/vnd.hancom.hwpx": {".hwpx"},
+    "application/vnd.oasis.opendocument.text": {".odt"},
+    "application/vnd.oasis.opendocument.spreadsheet": {".ods"},
+    "application/vnd.oasis.opendocument.presentation": {".odp"},
+    "application/java-archive": {".jar"},
+    "application/vnd.android.package-archive": {".apk"},
     "application/vnd.rar": {".rar"},
     "application/x-rar-compressed": {".rar"},
     "application/x-7z-compressed": {".7z"},
@@ -156,6 +205,25 @@ MIME_EXTENSION_MAP = {
     "image/tiff": {".tif", ".tiff"},
     "application/vnd.microsoft.portable-executable":
         {".exe", ".dll", ".sys", ".scr", ".com"},
+    "audio/mpeg": {".mp3"},
+    "audio/wav": {".wav"},
+    "audio/x-wav": {".wav"},
+    "audio/flac": {".flac"},
+    "audio/mp4": {".m4a"},
+    "audio/ogg": {".ogg"},
+    "application/ogg": {".ogg"},
+    "video/mp4": {".mp4"},
+    "video/quicktime": {".mov"},
+    "video/x-msvideo": {".avi"},
+    "video/x-matroska": {".mkv"},
+    "video/webm": {".webm"},
+    "text/csv": {".csv"},
+    "application/json": {".json"},
+    "application/xml": {".xml"},
+    "text/xml": {".xml"},
+    "application/yaml": {".yaml", ".yml"},
+    "text/yaml": {".yaml", ".yml"},
+    "application/vnd.sqlite3": {".db", ".sqlite", ".sqlite3"},
 }
 
 # 위험 문자열 탐지 패턴.
@@ -167,9 +235,23 @@ SUSPICIOUS_COMMAND_PATTERNS = [
 ]
 
 EXECUTION_API_PATTERNS = [
+    # PHP / 범용 스크립트 실행 함수
+    r"\bsystem\s*\(",
+    r"\bexec\s*\(",
+    r"\bpassthru\s*\(",
+    r"\bshell_exec\s*\(",
+    r"\bpopen\s*\(",
+    r"\bproc_open\s*\(",
+    r"\bassert\s*\(",
+    # Java/JSP 프로세스 실행
+    r"\bRuntime\s*\.\s*(?:getRuntime\s*\(\s*\)\s*\.)?exec\s*\(",
+    r"\bnew\s+ProcessBuilder\s*\(",
+    # Windows API / 동적 코드 실행
     r"\bCreateProcess(?:A|W)?\s*\(",
     r"\bShellExecute(?:A|W)?\s*\(",
     r"\beval\s*\(",
+    # Classic ASP에서 COM 객체를 통한 프로세스 실행 등에 사용
+    r"\bServer\s*\.\s*CreateObject\s*\(",
 ]
 
 NETWORK_API_PATTERNS = [
@@ -180,7 +262,27 @@ NETWORK_API_PATTERNS = [
 
 OBFUSCATION_PATTERNS = [
     r"\bfromCharCode\s*\(",
+    r"\bbase64_decode\s*\(",
+    r"\bgzinflate\s*\(",
+    r"\bstr_rot13\s*\(",
     r"(?:0x[0-9a-fA-F]{2,}\s*,\s*){4,}0x[0-9a-fA-F]{2,}",
+]
+
+# 웹 요청에서 공격자가 제어할 수 있는 값을 읽는 대표 패턴.
+# 외부 입력 자체는 정상 코드에도 흔하므로 별도 출력 Feature를 추가하지 않고,
+# 기존 37개 구조를 유지한 채 suspicious_string_count에만 반영한다.
+EXTERNAL_INPUT_PATTERNS = [
+    # PHP superglobal
+    r"\$_(?:GET|POST|REQUEST|COOKIE|FILES|SERVER)\s*\[",
+    # Java Servlet / JSP
+    r"\brequest\s*\.\s*(?:getParameter|getParameterValues|getHeader|getCookies)\s*\(",
+    # Classic ASP / ASP.NET
+    r"\bRequest\s*\.\s*(?:Form|QueryString|Cookies|Params)\b",
+    r"\bRequest\s*\(\s*[\"']",
+    # Python 웹 프레임워크
+    r"\brequest\s*\.\s*(?:args|form|json|values|files)\b",
+    # Node.js / Express
+    r"\breq\s*\.\s*(?:query|body|params|cookies)\b",
 ]
 
 URL_PATTERN = re.compile(
@@ -218,30 +320,131 @@ EMBEDDED_SIGNATURES = {
     b"\x37\x7a\xbc\xaf\x27\x1c",
 }
 
-# 확장자별 header size mapping.
-# 명세에서 "확장자에 따른 header size mapping 제작"을 요구하므로
-# 여기서는 분석용 기본값을 고정한다.
+# 확장자별 header entropy 계산 범위.
+# 파일 시그니처와 초기 메타데이터/컨테이너 구조가 들어오는 범위를 기준으로
+# 설정한다. 값은 Magic Bytes 자체의 길이가 아니라, header_entropy를 계산할
+# 파일 앞부분의 최대 byte 수이다. 파일이 이보다 작으면 파일 전체를 사용한다.
 HEADER_SIZE_MAP = {
-    ".pdf": 4096,
+    # 문서
+    ".pdf": 1024,
+    ".doc": 512,
+    ".docx": 4096,
+    ".docm": 4096,
+    ".xls": 512,
+    ".xlsx": 4096,
+    ".xlsm": 4096,
+    ".ppt": 512,
+    ".pptx": 4096,
+    ".pptm": 4096,
+    ".txt": 4096,
+    ".rtf": 1024,
+    ".odt": 4096,
+    ".ods": 4096,
+    ".odp": 4096,
+    ".hwp": 512,
+    ".hwpx": 4096,
+
+    # 이미지
     ".jpg": 4096,
     ".jpeg": 4096,
-    ".png": 4096,
-    ".gif": 4096,
-    ".bmp": 4096,
-    ".webp": 4096,
+    ".png": 64,
+    ".gif": 64,
+    ".bmp": 64,
+    ".tif": 64,
+    ".tiff": 64,
+    ".webp": 64,
+    ".ico": 64,
+    ".svg": 4096,
+
+    # 실행 파일
     ".exe": 4096,
     ".dll": 4096,
     ".sys": 4096,
     ".scr": 4096,
+    ".msi": 512,
+    ".com": 512,
+    ".apk": 4096,
+    ".jar": 4096,
+
+    # 스크립트/소스 텍스트
+    ".js": 4096,
+    ".jse": 4096,
+    ".ps1": 4096,
+    ".psm1": 4096,
+    ".vbs": 4096,
+    ".vbe": 4096,
+    ".bat": 4096,
+    ".cmd": 4096,
+    ".sh": 4096,
+    ".bash": 4096,
+    ".py": 4096,
+    ".pl": 4096,
+    ".rb": 4096,
+    ".php": 4096,
+    ".php3": 4096,
+    ".php4": 4096,
+    ".php5": 4096,
+    ".phtml": 4096,
+    ".jsp": 4096,
+    ".jspx": 4096,
+    ".asp": 4096,
+    ".aspx": 4096,
+    ".cgi": 4096,
+
+    # 압축/컨테이너
     ".zip": 4096,
-    ".rar": 4096,
-    ".7z": 4096,
-    ".docx": 4096,
-    ".xlsx": 4096,
-    ".pptx": 4096,
+    ".rar": 64,
+    ".7z": 64,
+    ".tar": 512,
+    ".gz": 64,
+    ".bz2": 64,
+    ".xz": 64,
+    ".tar.gz": 64,
+    ".tar.bz2": 64,
+    ".tar.xz": 64,
+
+    # 오디오
+    ".mp3": 4096,
+    ".wav": 64,
+    ".flac": 64,
+    ".m4a": 4096,
+    ".ogg": 4096,
+
+    # 비디오
+    ".mp4": 4096,
+    ".mov": 4096,
+    ".avi": 64,
+    ".mkv": 4096,
+    ".webm": 4096,
+
+    # 데이터
+    ".csv": 4096,
+    ".json": 4096,
+    ".xml": 4096,
+    ".yaml": 4096,
+    ".yml": 4096,
+    ".db": 64,
+    ".sqlite": 64,
+    ".sqlite3": 64,
 }
 
 DEFAULT_HEADER_SIZE = 4096
+
+# KNOWN_EXTENSIONS와 HEADER_SIZE_MAP이 서로 어긋나는 것을 조기에 탐지한다.
+_MISSING_HEADER_SIZE_EXTENSIONS = KNOWN_EXTENSIONS - HEADER_SIZE_MAP.keys()
+if _MISSING_HEADER_SIZE_EXTENSIONS:
+    missing = ", ".join(sorted(_MISSING_HEADER_SIZE_EXTENSIONS))
+    raise RuntimeError(f"HEADER_SIZE_MAP에 없는 확장자: {missing}")
+
+_MISSING_CATEGORY_EXTENSIONS = KNOWN_EXTENSIONS - EXTENSION_CATEGORY.keys()
+if _MISSING_CATEGORY_EXTENSIONS:
+    missing = ", ".join(sorted(_MISSING_CATEGORY_EXTENSIONS))
+    raise RuntimeError(f"EXTENSION_CATEGORY에 없는 확장자: {missing}")
+
+_EXTRA_HEADER_SIZE_EXTENSIONS = HEADER_SIZE_MAP.keys() - KNOWN_EXTENSIONS
+if _EXTRA_HEADER_SIZE_EXTENSIONS:
+    extra = ", ".join(sorted(_EXTRA_HEADER_SIZE_EXTENSIONS))
+    raise RuntimeError(f"KNOWN_EXTENSIONS에 없는 Header Size 확장자: {extra}")
 
 # Archive bomb 판정용 기준.
 # 실제 프로젝트에서는 데이터셋 특성에 맞춰 별도 설정 파일로 분리하는 것을 권장.
@@ -289,6 +492,14 @@ def _count_regex_text(text: str, patterns: Iterable[str]) -> int:
     return count
 
 
+def _count_distinct_regex_text(text: str, patterns: Iterable[str]) -> int:
+    """겹치는 패턴이 같은 코드 조각을 중복 집계하지 않도록 센다."""
+    combined = "|".join(f"(?:{pattern})" for pattern in patterns)
+    if not combined:
+        return 0
+    return len(re.findall(combined, text, flags=re.IGNORECASE))
+
+
 def _is_unicode_control_char(ch: str) -> bool:
     # Unicode format/control characters.
     # 특히 RTL/LTR 등의 화면 표시 조작에 사용될 수 있는 문자 포함.
@@ -318,17 +529,18 @@ def _normalized_suffixes(filename: str) -> list[str]:
         reverse=True,
     )
 
-    suffixes: list[str] = []
+    composite_suffix = ""
     remainder = lower
 
     # 예: sample.tar.gz
     for ext in composite:
         if remainder.endswith(ext):
-            suffixes.append(ext)
+            composite_suffix = ext
             remainder = remainder[: -len(ext)]
             break
 
     # 나머지 부분에서 일반 확장자를 추출한다.
+    suffixes: list[str] = []
     parts = remainder.split(".")
     if len(parts) > 1:
         for part in parts[1:]:
@@ -336,7 +548,10 @@ def _normalized_suffixes(filename: str) -> list[str]:
             if ext in KNOWN_EXTENSIONS:
                 suffixes.append(ext)
 
-    return list(reversed(suffixes))
+    if composite_suffix:
+        suffixes.append(composite_suffix)
+
+    return suffixes
 
 
 def _last_known_extension(filename: str) -> str:
@@ -354,7 +569,116 @@ def _detect_extension_category(filename: str) -> str:
     return EXTENSION_CATEGORY.get(ext, "unknown")
 
 
+def _get_structured_binary_format_info(
+    data: bytes,
+) -> Optional[Tuple[str, str, set[str]]]:
+    """고정된 0번 위치만으로 판별할 수 없는 컨테이너 형식을 식별한다."""
+    if len(data) >= 12 and data[:4] == b"RIFF":
+        form_type = data[8:12]
+        if form_type == b"WAVE":
+            return "wav", "audio/wav", {".wav"}
+        if form_type == b"AVI ":
+            return "avi", "video/x-msvideo", {".avi"}
+
+    # ISO Base Media File Format: size(4 bytes) 다음에 ftyp이 위치한다.
+    if len(data) >= 12 and data[4:8] == b"ftyp":
+        brand = data[8:12]
+        if brand in {b"M4A ", b"M4B ", b"M4P "}:
+            return "m4a", "audio/mp4", {".m4a"}
+        if brand == b"qt  ":
+            return "mov", "video/quicktime", {".mov"}
+        return "mp4", "video/mp4", {".mp4"}
+
+    # MKV와 WebM은 같은 EBML 헤더를 쓰므로 DocType 문자열을 함께 본다.
+    if data.startswith(b"\x1a\x45\xdf\xa3"):
+        lowered = data.lower()
+        if b"webm" in lowered:
+            return "webm", "video/webm", {".webm"}
+        if b"matroska" in lowered:
+            return "mkv", "video/x-matroska", {".mkv"}
+        return "ebml", "video/x-matroska", {".mkv", ".webm"}
+
+    # ID3 태그가 없는 MP3는 MPEG Audio Frame Sync로 시작할 수 있다.
+    if len(data) >= 2 and data[0] == 0xFF and (data[1] & 0xE0) == 0xE0:
+        layer_bits = (data[1] >> 1) & 0x03
+        bitrate_index = (data[2] >> 4) & 0x0F if len(data) >= 3 else 0
+        sample_rate_index = (data[2] >> 2) & 0x03 if len(data) >= 3 else 3
+        if layer_bits != 0 and bitrate_index not in {0, 15} and sample_rate_index != 3:
+            return "mp3", "audio/mpeg", {".mp3"}
+
+    return None
+
+
+def _decode_text_sample(data: bytes) -> Optional[str]:
+    """BOM을 고려하여 작은 텍스트 표본을 안전하게 디코딩한다."""
+    if b"\x00" in data[:1024]:
+        return None
+    for encoding in ("utf-8-sig", "utf-16", "cp949"):
+        try:
+            return data.decode(encoding)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return None
+
+
+def _get_structured_text_format_info(
+    data: bytes,
+    expected_extension: str,
+) -> Optional[Tuple[str, str, set[str]]]:
+    """대표 텍스트 데이터 형식을 제한된 표본에서 구조 검증한다."""
+    text = _decode_text_sample(data)
+    if text is None or not text.strip():
+        return None
+
+    stripped = text.lstrip()
+
+    if expected_extension == ".json":
+        try:
+            json.loads(text)
+        except (json.JSONDecodeError, ValueError):
+            return None
+        return "json", "application/json", {".json"}
+
+    if expected_extension == ".xml":
+        try:
+            ET.fromstring(text)
+        except ET.ParseError:
+            return None
+        return "xml", "application/xml", {".xml"}
+
+    if expected_extension in {".yaml", ".yml"}:
+        # PyYAML 의존성을 추가하지 않고 대표적인 YAML 문서 표식을 확인한다.
+        meaningful = [
+            line for line in text.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        if meaningful and (
+            meaningful[0].strip() == "---"
+            or any(re.match(r"^\s*[\w.-]+\s*:\s*.*$", line) for line in meaningful)
+            or any(re.match(r"^\s*-\s+.+$", line) for line in meaningful)
+        ):
+            return "yaml", "application/yaml", {".yaml", ".yml"}
+        return None
+
+    if expected_extension == ".csv":
+        try:
+            sample = text[:4096]
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+            rows = list(csv.reader(io.StringIO(sample), dialect))[:10]
+        except (csv.Error, UnicodeError):
+            return None
+        widths = [len(row) for row in rows if row]
+        if len(widths) >= 2 and widths[0] >= 2 and len(set(widths)) == 1:
+            return "csv", "text/csv", {".csv"}
+
+    return None
+
+
 def _get_magic_info(data: bytes) -> Tuple[Optional[str], Optional[str], set[str]]:
+    structured = _get_structured_binary_format_info(data)
+    if structured is not None:
+        return structured
+
     best = None
     for signature, info in MAGIC_SIGNATURES.items():
         if data.startswith(signature):
@@ -368,39 +692,173 @@ def _get_magic_info(data: bytes) -> Tuple[Optional[str], Optional[str], set[str]
     return format_name, mime_type, extensions
 
 
+def _detect_zip_container(
+    file_path: Path,
+) -> Optional[Tuple[str, str, set[str]]]:
+    """ZIP 내부 구조로 OOXML·HWPX·ODF·JAR·APK 형식을 식별한다."""
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            names = set(zf.namelist())
+
+            # APK도 META-INF/MANIFEST.MF를 포함할 수 있으므로 JAR보다 먼저 검사한다.
+            if "AndroidManifest.xml" in names and (
+                "classes.dex" in names or "resources.arsc" in names
+            ):
+                return (
+                    "apk",
+                    "application/vnd.android.package-archive",
+                    {".apk"},
+                )
+
+            content_types = b""
+            if "[Content_Types].xml" in names:
+                # 형식 식별에 필요한 작은 메타데이터만 제한적으로 읽는다.
+                info = zf.getinfo("[Content_Types].xml")
+                if info.file_size <= 2 * 1024 * 1024:
+                    content_types = zf.read(info).lower()
+
+            if (
+                "[Content_Types].xml" in names
+                and "word/document.xml" in names
+            ):
+                is_macro = b"macroenabled.main+xml" in content_types
+                return (
+                    "docm" if is_macro else "docx",
+                    (
+                        "application/vnd.ms-word.document.macroenabled.12"
+                        if is_macro
+                        else "application/vnd.openxmlformats-officedocument."
+                             "wordprocessingml.document"
+                    ),
+                    {".docm"} if is_macro else {".docx"},
+                )
+
+            if (
+                "[Content_Types].xml" in names
+                and "xl/workbook.xml" in names
+            ):
+                is_macro = b"macroenabled.main+xml" in content_types
+                return (
+                    "xlsm" if is_macro else "xlsx",
+                    (
+                        "application/vnd.ms-excel.sheet.macroenabled.12"
+                        if is_macro
+                        else "application/vnd.openxmlformats-officedocument."
+                             "spreadsheetml.sheet"
+                    ),
+                    {".xlsm"} if is_macro else {".xlsx"},
+                )
+
+            if (
+                "[Content_Types].xml" in names
+                and "ppt/presentation.xml" in names
+            ):
+                is_macro = b"macroenabled.main+xml" in content_types
+                return (
+                    "pptm" if is_macro else "pptx",
+                    (
+                        "application/vnd.ms-powerpoint.presentation."
+                        "macroenabled.12"
+                        if is_macro
+                        else "application/vnd.openxmlformats-officedocument."
+                             "presentationml.presentation"
+                    ),
+                    {".pptm"} if is_macro else {".pptx"},
+                )
+
+            if (
+                "Contents/content.hpf" in names
+                and any(name.startswith("META-INF/") for name in names)
+            ):
+                return "hwpx", "application/vnd.hancom.hwpx", {".hwpx"}
+
+            if "mimetype" in names:
+                info = zf.getinfo("mimetype")
+                if info.file_size <= 1024:
+                    odf_mime = zf.read(info).decode("ascii", errors="ignore").strip()
+                    odf_types = {
+                        "application/vnd.oasis.opendocument.text": ("odt", {".odt"}),
+                        "application/vnd.oasis.opendocument.spreadsheet": ("ods", {".ods"}),
+                        "application/vnd.oasis.opendocument.presentation": ("odp", {".odp"}),
+                    }
+                    if odf_mime in odf_types:
+                        format_name, extensions = odf_types[odf_mime]
+                        return format_name, odf_mime, extensions
+
+            if "META-INF/MANIFEST.MF" in names:
+                return "jar", "application/java-archive", {".jar"}
+    except (zipfile.BadZipFile, KeyError, OSError, RuntimeError, ValueError):
+        return None
+
+    return "zip", "application/zip", {".zip"}
+
+
+def _get_file_format_info(
+    file_path: Path,
+) -> Tuple[Optional[str], Optional[str], set[str]]:
+    """Magic Bytes를 확인하고 ZIP이면 내부 컨테이너 형식까지 판별한다."""
+    head = _read_head(file_path, 4096)
+    format_name, mime_type, extensions = _get_magic_info(head)
+    if format_name == "zip":
+        return _detect_zip_container(file_path) or (
+            format_name,
+            mime_type,
+            extensions,
+        )
+    if format_name is not None:
+        return format_name, mime_type, extensions
+
+    text_info = _get_structured_text_format_info(
+        head,
+        _last_known_extension(file_path.name),
+    )
+    if text_info is not None:
+        return text_info
+
+    return format_name, mime_type, extensions
+
+
 def _magic_matches_extension(filename: str, magic_extensions: set[str]) -> int:
-    suffixes = _normalized_suffixes(filename)
-    if not suffixes or not magic_extensions:
+    final_extension = _last_known_extension(filename)
+    if not final_extension or not magic_extensions:
         return 0
 
-    # 확장자가 알려진 형식이고 Magic Bytes도 알려진 경우에만 비교.
-    return int(any(ext in magic_extensions for ext in suffixes))
+    # 사용자에게 표시되는 마지막 확장자와 실제 형식을 비교.
+    return int(final_extension in magic_extensions)
 
 
 def _mime_matches_extension(filename: str, mime_type: Optional[str]) -> int:
     if not mime_type:
         return 0
 
-    suffixes = _normalized_suffixes(filename)
-    if not suffixes:
+    final_extension = _last_known_extension(filename)
+    if not final_extension:
         return 0
 
     mime = mime_type.lower().split(";", 1)[0].strip()
 
     if mime in MIME_EXTENSION_MAP:
-        return int(any(ext in MIME_EXTENSION_MAP[mime] for ext in suffixes))
+        return int(final_extension in MIME_EXTENSION_MAP[mime])
 
     # python-magic이 특정 MIME을 반환하더라도 표에 없는 경우에는
     # mimetypes의 일반적인 추정을 보조적으로 사용한다.
-    for ext in suffixes:
-        guessed, _ = mimetypes.guess_type("x" + ext)
-        if guessed and guessed == mime:
-            return 1
+    guessed, _ = mimetypes.guess_type("x" + final_extension)
+    if guessed and guessed == mime:
+        return 1
 
     return 0
 
 
 def _detect_mime(file_path: Path) -> Optional[str]:
+    # libmagic이 OOXML 등을 application/zip으로만 반환하는 환경에서도
+    # ZIP 내부 구조를 우선하여 구체적인 MIME을 사용한다.
+    _, container_mime, _ = _get_file_format_info(file_path)
+    if container_mime and container_mime not in {
+        "application/zip",
+        "application/x-zip-compressed",
+    }:
+        return container_mime
+
     if magic is not None:
         try:
             return magic.from_file(str(file_path), mime=True)
@@ -408,8 +866,7 @@ def _detect_mime(file_path: Path) -> Optional[str]:
             pass
 
     # Magic Bytes fallback.
-    head = _read_head(file_path, 64)
-    _, mime_type, _ = _get_magic_info(head)
+    _, mime_type, _ = _get_file_format_info(file_path)
     if mime_type:
         return mime_type
 
@@ -427,6 +884,8 @@ def analyze_filename(filename: str) -> Dict[str, Any]:
 
     extension_count = len(suffixes)
     has_double_extension = int(extension_count >= 2)
+
+    extension_category = _detect_extension_category(name)
 
     last_ext = _last_known_extension(name)
     has_uppercase_extension = int(
@@ -446,6 +905,7 @@ def analyze_filename(filename: str) -> Dict[str, Any]:
         )
         special_char_ratio = special_count / len(name)
 
+
     return {
         "filename_length": len(name),
         "extension_count": extension_count,
@@ -453,7 +913,7 @@ def analyze_filename(filename: str) -> Dict[str, Any]:
         "has_uppercase_extension": has_uppercase_extension,
         "has_unicode_control_char": has_unicode_control_char,
         "special_char_ratio": special_char_ratio,
-        "extension_category": _detect_extension_category(name),
+        "extension_category": extension_category,
         "is_executable_extension": int(
             any(ext in EXECUTABLE_EXTENSIONS for ext in suffixes)
         ),
@@ -482,8 +942,7 @@ def analyze_file_type(
     path = Path(file_path)
     name = filename or path.name
 
-    head = _read_head(path, 64)
-    _, detected_magic_mime, magic_extensions = _get_magic_info(head)
+    _, detected_magic_mime, magic_extensions = _get_file_format_info(path)
 
     magic_bytes_known = int(detected_magic_mime is not None)
     magic_bytes_valid = (
@@ -503,8 +962,11 @@ def analyze_file_type(
     )
 
     if claimed_mime is None:
+        # Content-Type이 제공되지 않은 경우와 정상 일치(0)를 구분한다.
+        has_content_type = 0
         claimed_mime_mismatch = 0
     else:
+        has_content_type = 1
         claimed = claimed_mime.lower().split(";", 1)[0].strip()
         actual = (detected_mime or "").lower().split(";", 1)[0].strip()
         claimed_mime_mismatch = int(bool(actual) and claimed != actual)
@@ -513,6 +975,7 @@ def analyze_file_type(
         "magic_bytes_known": magic_bytes_known,
         "magic_bytes_valid": magic_bytes_valid,
         "extension_mime_mismatch": extension_mime_mismatch,
+        "has_content_type": has_content_type,
         "claimed_mime_mismatch": claimed_mime_mismatch,
     }
 
@@ -649,7 +1112,7 @@ def analyze_content(
         text,
         SUSPICIOUS_COMMAND_PATTERNS,
     )
-    execution_api_count = _count_regex_text(
+    execution_api_count = _count_distinct_regex_text(
         text,
         EXECUTION_API_PATTERNS,
     )
@@ -664,13 +1127,20 @@ def analyze_content(
         + _count_regex_text(text, OBFUSCATION_PATTERNS)
     )
 
-    # 명세: suspicious_string_count =
-    # suspicious command + execution API + network API + obfuscation pattern
+    # 외부 입력은 정상 웹 애플리케이션에도 자주 나타나므로 독립 출력값으로
+    # 악성도를 과도하게 높이지 않고, 전체 위험 문자열 집계에만 포함한다.
+    external_input_count = _count_distinct_regex_text(
+        text,
+        EXTERNAL_INPUT_PATTERNS,
+    )
+
+    # 기존 37개 Feature 구조를 유지하면서 웹셸 외부 입력 단서까지 합산한다.
     suspicious_string_count = (
         suspicious_command_count
         + execution_api_count
         + network_api_count
         + obfuscation_pattern_count
+        + external_input_count
     )
 
     return {
@@ -827,7 +1297,7 @@ def _zip_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
     except OSError:
         return 0, 0, 0, 0, 0.0, 0
 
-    return _zip_stats_from_bytes(data, depth=1)
+    return _zip_stats_from_bytes(data, depth=0)
 
 
 def _rar_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
@@ -836,7 +1306,7 @@ def _rar_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
     rarfile는 환경에 따라 외부 unrar/bsdtar 프로그램이 필요할 수 있다.
     """
     if rarfile is None:
-        return 0, 0, 0, 1, 0.0, 0
+        return 0, 0, 0, 0, 0.0, 0
 
     try:
         with rarfile.RarFile(str(file_path)) as rf:
@@ -880,13 +1350,13 @@ def _rar_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
                 entry_count,
                 executable_count,
                 script_count,
-                1,
+                0,
                 ratio,
                 bomb,
             )
 
     except Exception:
-        return 0, 0, 0, 1, 0.0, 0
+        return 0, 0, 0, 0, 0.0, 0
 
 
 def _seven_zip_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
@@ -894,7 +1364,7 @@ def _seven_zip_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
     7z 분석은 py7zr가 설치된 경우에만 수행한다.
     """
     if py7zr is None:
-        return 0, 0, 0, 1, 0.0, 0
+        return 0, 0, 0, 0, 0.0, 0
 
     try:
         with py7zr.SevenZipFile(str(file_path), mode="r") as archive:
@@ -918,13 +1388,13 @@ def _seven_zip_stats(file_path: Path) -> Tuple[int, int, int, int, float, int]:
                 entry_count,
                 executable_count,
                 script_count,
-                1,
+                0,
                 0.0,
                 int(entry_count > ARCHIVE_MAX_ENTRIES),
             )
 
     except Exception:
-        return 0, 0, 0, 1, 0.0, 0
+        return 0, 0, 0, 0, 0.0, 0
 
 
 def analyze_archive(
@@ -982,7 +1452,7 @@ def analyze_archive(
         entry_count = 0
         executable_count = 0
         script_count = 0
-        depth = 1
+        depth = 0
         ratio = 0.0
         bomb = 0
 
@@ -1017,6 +1487,7 @@ FEATURE_ORDER = [
     "magic_bytes_known",
     "magic_bytes_valid",
     "extension_mime_mismatch",
+    "has_content_type",
     "claimed_mime_mismatch",
     "embedded_file_signature_count",
     "byte_entropy",
@@ -1123,7 +1594,9 @@ def preprocess_many(
     """
     results = []
 
-    for file_path in file_paths:
+    for i, file_path in enumerate(file_paths, start=1):
+        
+        print(f"[{i}] / 파일 처리 중: {file_path}")
         key = str(file_path)
         claimed_mime = claimed_mimes.get(key) if claimed_mimes else None
         results.append(
