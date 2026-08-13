@@ -127,7 +127,7 @@ if __name__ == "__main__":
     preprocessed_dir = os.path.join(BASE_DIR, "data", "preprocessed")
     csv_files = glob.glob(os.path.join(preprocessed_dir, "dataset_*.csv"))
 
-    print(f"=== 🚀 전체 {len(csv_files)}개 preprocessed CSV 병합 배치 추론 및 성능 검증 시작 ===\n", flush=True)
+    print(f"=== 전체 {len(csv_files)}개 preprocessed CSV 병합 배치 추론 및 성능 검증 시작 ===\n", flush=True)
 
     if not csv_files:
         print(f"❌ preprocessed 폴더에 CSV 파일이 존재하지 않습니다: {preprocessed_dir}", flush=True)
@@ -169,16 +169,16 @@ if __name__ == "__main__":
                 # 📌 개별 데이터 추론 결과 실시간 출력
                 print(f"{status} [{file_identifier}] -> 예측: {pred_label} (실제: {actual_label}) | 확률: {res['malware_probability']} | 위험도: {res['risk_level']}", flush=True)
             else:
-                print(f"📄 [{file_identifier}] -> 예측: {pred_label} | 확률: {res['malware_probability']} | 위험도: {res['risk_level']}", flush=True)
+                print(f" [{file_identifier}] -> 예측: {pred_label} | 확률: {res['malware_probability']} | 위험도: {res['risk_level']}", flush=True)
 
         # 성능 검증 평가 결과 출력
         if y_true and y_pred:
             acc = accuracy_score(y_true, y_pred) * 100
             print("\n" + "="*50)
-            print("🎯 [최종 평가 결과 (Model Evaluation Report)]")
+            print("[최종 평가 결과 (Model Evaluation Report)]")
             print("="*50)
-            print(f"📌 전체 Accuracy (정확도): {acc:.2f}%")
-            print("\n📊 세부 리포트 (Classification Report):")
+            print(f"전체 Accuracy (정확도): {acc:.2f}%")
+            print("\n세부 리포트 (Classification Report):")
             print(classification_report(y_true, y_pred, target_names=["Benign", "Malicious"]))
             print("="*50)
 
