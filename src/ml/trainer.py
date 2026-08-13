@@ -66,9 +66,20 @@ def train_model(df:pd.DataFrame):
     X = df.drop(columns=[col for col in drop_cols if col in df.columns], errors='ignore')
     y = df['label']
 
+    # --- [추가] 라벨 분포 및 비율 확인 ---
+    label_counts = y.value_counts()
+    label_ratios = y.value_counts(normalize=True) * 100
+    
+    malware_cnt = label_counts.get(1, 0)
+    benign_cnt = label_counts.get(0, 0)
+    malware_pct = label_ratios.get(1, 0.0)
+    benign_pct = label_ratios.get(0, 0.0)
+
     # 학습할 데이터 확인
     print('===============================================================')
     print(f'총 샘플 수 : {len(df)} / 학습에 사용할 Feature 수 : {X.shape[1]}')
+    print(f'• 악성(Malware, 1) : {malware_cnt}개 ({malware_pct:.1f}%)')
+    print(f'• 정상(Benign, 0)  : {benign_cnt}개 ({benign_pct:.1f}%)')
     print('===============================================================\n')
 
     # 데이터셋 train과 test로 분리
@@ -79,8 +90,8 @@ def train_model(df:pd.DataFrame):
     # 하이퍼파라미터 후보군 정의
     param_grid = {
         'n_estimators': [50, 100, 200],     # 트리의 개수
-        'max_depth': [8, 10, 12, 15],       # 학습 깊이(과적합 방지)
-        'criterion': ['gini', 'entropy']    # 데이터 분기 기
+        'max_depth': [8, 10, 12, 15, 20, 25, 30],       # 학습 깊이(과적합 방지)
+        'criterion': ['gini', 'entropy']    # 데이터 분기 기준
     }
 
     # 5-Fold Stratified Cross-Validation 설정

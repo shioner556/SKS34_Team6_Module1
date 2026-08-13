@@ -1,5 +1,5 @@
 {
-    "trained_at": "2026-08-13 14:28:48",
+    "trained_at": "2026-08-13 15:08:51",
     "data_info": {
         "total_samples": 11282,
         "train_samples": 9025,
@@ -8,26 +8,26 @@
     },
     "best_params": {
         "criterion": "gini",
-        "max_depth": 15,
-        "n_estimators": 50
+        "max_depth": 30,
+        "n_estimators": 200
     },
     "performance": {
-        "cv_best_recall": 0.955,
-        "test_accuracy": 0.9739,
-        "test_malware_recall": 0.9575,
-        "test_malware_precision": 0.9837,
-        "test_malware_f1": 0.9704
+        "cv_best_recall": 0.9609,
+        "test_accuracy": 0.9792,
+        "test_malware_recall": 0.9654,
+        "test_malware_precision": 0.9879,
+        "test_malware_f1": 0.9765
     },
     "top_10_features": {
-        "file_size": 0.1207,
-        "header_entropy": 0.1068,
-        "byte_entropy": 0.0986,
-        "execution_api_count": 0.0774,
-        "url_count": 0.0664,
-        "special_char_ratio": 0.0622,
-        "suspicious_command_count": 0.0564,
-        "printable_ratio": 0.0538,
-        "filename_length": 0.0516,
-        "null_byte_ratio": 0.0395
+        "byte_entropy": 0.1297,
+        "file_size": 0.098,
+        "header_entropy": 0.0957,
+        "url_count": 0.0656,
+        "filename_length": 0.062,
+        "execution_api_count": 0.0618,
+        "printable_ratio": 0.0615,
+        "special_char_ratio": 0.0603,
+        "null_byte_ratio": 0.0533,
+        "suspicious_command_count": 0.0456
     }
 }
