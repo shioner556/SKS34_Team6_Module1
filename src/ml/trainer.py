@@ -8,7 +8,7 @@ from sklearn.metrics import accuracy_score, classification_report
 from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
 
 # dataset, 모델 저장 경로 설정
-DATA_PATH = "data/preprocessed/dataset.csv" 
+DATA_PATH = "data/preprocessed/dataset_train.csv"
 MODEL_SAVE_PATH = "models/random_forest.pkl"
 METADATA_SAVE_PATH = "models/metadata.json"
 
@@ -71,7 +71,7 @@ def train_model(df:pd.DataFrame):
     # RandomForest 모델 생성 및 학습
     base_model = RandomForestClassifier(random_state=42)
 
-    # GridSearchCV 객체 생성
+    # GridSearchCV 객체 생성 (하이퍼파라미터 자동 탐색을 위한 객체)
     grid_search = GridSearchCV(
         estimator=base_model,       # 머신러닝 모델 지정
         param_grid=param_grid,      # 하이퍼파라미터 후보군 지정
@@ -110,18 +110,19 @@ def train_model(df:pd.DataFrame):
 # 모델 학습 메타데이터 저장
 def save_training_history(X, y_test, y_pred, grid_search, model):
     now = datetime.now()
-    version_str = now.strftime("%Y%m%d_%H%M%S")
-    timestamp_str = now.strftime("%Y-%m-%d %H:%M:%S")
+
+    #학습 일시 생성
+    timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
 
     report = classification_report(y_test, y_pred, output_dict=True)
 
+    # 트리 분할 시 중요하게 활용한 수치 추출
     feature_importances = pd.Series(
         model.feature_importances_, index=X.columns
     ).sort_values(ascending=False).head(10).round(4).to_dict()
 
     metadata = {
-        "version" : version_str,
-        "trained_at" : timestamp_str,
+        "trained_at" : timestamp,
         "data_info": {
             "total_samples" : len(X) + len(y_test),
             "train_samples" : len(X),
@@ -130,7 +131,7 @@ def save_training_history(X, y_test, y_pred, grid_search, model):
         },
         "best_params" : grid_search.best_params_,
         "performance" : {
-            "cv_best_recall" : round(grid_search.best_score_, 4),
+            "cv_best_recall" : round(grid_search.best_score_, 4),           #5-Fold CV 평균 Recall 최고점
             "test_accuracy" : round(accuracy_score(y_test, y_pred), 4),
             "test_malware_recall" : round(report['1']['recall'], 4),
             "test_malware_precision" : round(report['1']['precision'], 4),
