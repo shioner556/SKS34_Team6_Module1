@@ -1,10 +1,31 @@
 """CVE 벡터스토어 설정 스크립트
+==============================================
 
-사용법:
-  python setup_vectorstore.py
+■ 이 파일이 하는 일
+  data/cve/ 폴더에 있는 CVE 파일(JSON/PDF/TXT)을 OpenAI 벡터스토어에 업로드한다.
+  벡터스토어는 3단계 Agent가 CVE를 의미 기반으로 검색(file_search)할 때 사용한다.
 
-  - VECTOR_STORE_ID가 .env에 없으면: 벡터스토어 최초 생성
-  - VECTOR_STORE_ID가 .env에 있으면: 기존 파일 교체 (ID 유지)
+■ 누가 실행하나?
+  팀장(또는 담당자)이 실행한다. 팀원 전체가 실행할 필요는 없다.
+
+■ 언제 실행하나?
+  1. 처음 프로젝트 세팅할 때 1회 실행
+  2. data/cve/ 안의 CVE 파일을 추가/수정했을 때 재실행 (기존 ID 유지)
+
+■ 실행 방법 (프로젝트 루트에서)
+  python src/agent/setup_vectorstore.py
+
+■ 실행 결과
+  - 최초 실행: 벡터스토어 생성 후 VECTOR_STORE_ID를 .env에 자동 저장
+  - 재실행: 기존 파일 삭제 후 재업로드 (VECTOR_STORE_ID는 변경되지 않음)
+
+■ 팀원들이 해야 할 일
+  팀장이 실행 후 출력된 VECTOR_STORE_ID를 각자 .env에 추가하면 된다.
+  예) VECTOR_STORE_ID=vs_xxxxxxxxxxxxxxxxxxxxxxxx
+
+■ 주의사항
+  - 실행 전 .env에 OPENAI_API_KEY가 설정되어 있어야 한다.
+  - data/cve/ 폴더에 파일이 1개 이상 있어야 한다.
 """
 import os
 import sys
@@ -15,8 +36,10 @@ from openai import OpenAI
 load_dotenv()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-DATA_DIR = Path(__file__).parent / "data" / "cve"
-ENV_PATH = Path(__file__).parent / ".env"
+# src/agent/ 기준으로 프로젝트 루트는 두 단계 위
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+DATA_DIR = PROJECT_ROOT / "data" / "cve"
+ENV_PATH = PROJECT_ROOT / ".env"
 
 
 def _get_files() -> list[Path]:

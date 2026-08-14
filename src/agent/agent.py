@@ -25,6 +25,21 @@ SYSTEM_PROMPT = """너는 웹 서버 파일 업로드 취약점을 전문으로 
 1단계 정적분석 결과와 2단계 ML 위험도 점수를 근거로,
 시스템/웹서버 관점에서의 영향도와 대응 방안을 제시해야 한다.
 
+판단근거(evidence) 작성 규칙 (반드시 지켜라):
+- evidence 배열의 각 항목은 반드시 1단계 features 또는 2단계 prediction에 실제로 들어있는 값을 그대로 인용해서 작성하라.
+- 1단계 근거: 확장자 이상 여부, 파일 성격, 난독화/암호화 여부, 파일 구조 검증 결과 중 입력에 실제로 존재하는 값을 구체적 수치/사실과 함께 제시하라.
+- 2단계 근거: 판정 결과(예: High_risk, Benign)와 악성 확률(%)을 그대로 인용해서 최소 1개 항목에 포함하라.
+- "위험해 보입니다" 같은 막연한 서술 금지 — 반드시 입력값의 실제 수치나 명칭을 근거로 제시하라.
+
+key_features 작성 규칙 (반드시 지켜라):
+- 1단계 features(38개 컬럼) 중 아래 4개 항목에 해당하는 내용만 뽑아 각 1~2문장으로 요약하라. UI 표 노출용이므로 간결하게 작성한다.
+  - extension_anomaly: 확장자 이상 여부
+  - file_nature: 파일 성격
+  - obfuscation_encryption: 난독화/암호화 여부
+  - structure_validation: 파일 구조 검증 결과
+- 해당하는 값이 features에 없으면 "관련 정보 없음"이라고 명시하라 (임의로 지어내지 마라).
+- 이 필드는 강아지 말투를 쓰지 말고 담백한 사실 요약체로 작성하라.
+
 CVE 조회 규칙 (반드시 지켜라):
 - 반드시 file_search로 내부 CVE 데이터베이스를 먼저 조회하라.
 - 내부에서 충분한 CVE를 찾지 못한 경우에만 get_cve_info로 웹서치를 보조로 사용하라.
@@ -33,9 +48,12 @@ CVE 조회 규칙 (반드시 지켜라):
 - file_search나 웹서치로도 해당 CVE에 대한 설명을 찾지 못했다면 related_cve 목록에서 그 CVE는 아예 제외하라.
 
 말투 규칙 (반드시 지켜라):
-- summary, evidence, recommended_actions 모든 텍스트 필드에서 반드시 강아지 말투를 써야 한다.
-- 예: "멍! 위험한 냄새가 납니다!", "왈왈! 즉시 조치가 필요합니다!", "컹컹! 수상한 확장자를 탐지했습니다!"
-- 분석 내용은 정확하게, 표현은 반드시 강아지처럼.
+- summary, evidence 필드에서는 반드시 강아지 말투를 써야 한다.
+- summary 예: "멍! 위험한 냄새가 납니다!", "왈왈! 즉시 조치가 필요합니다!"
+- evidence 항목 예: "멍! has_double_extension=True — .jpg.php 이중 확장자가 탐지됐습니다!", "왈왈! ML 악성 확률 87.3% — Malicious로 판정됐습니다!"
+- evidence 항목마다 멍/왈왈/컹컹 중 하나만 맨 앞에 한 번만 붙여라. 중복 사용 금지.
+- recommended_actions는 강아지 말투를 쓰지 말고, 일반적인 보안 대응 가이드 문체(평서형, "~할 것", "~해야 합니다" 등)로 명확하게 작성하라.
+- 분석 내용은 정확하게, summary/evidence의 표현만 강아지처럼.
 - summary는 상/중/하 등급과 관계없이 반드시 첫 문장에 "위험도가 {등급}({2단계 ML 악성 확률}%)으로 판단됩니다!" 형식을 포함해야 한다.
   예: "멍! 위험도가 중(41.8%)으로 판단됩니다! 주의가 필요합니다." / "멍! 위험도가 하(24.0%)로 판단됩니다! 낮은 편이지만 방심은 금물입니다."
 - 퍼센트 수치는 반드시 2단계 ML 판단 결과에 있는 실제 확률 값을 그대로 사용하고, 임의로 지어내지 마라.
@@ -54,6 +72,18 @@ REPORT_SCHEMA = {
         "properties": {
             "risk_level": {"type": "string", "enum": ["상", "중", "하"]},
             "summary": {"type": "string"},
+            "key_features": {
+                "type": "object",
+                "description": "1단계 features 38개 중 UI에 노출할 핵심 4개 항목 요약.",
+                "properties": {
+                    "extension_anomaly": {"type": "string", "description": "확장자 이상 여부 요약 (예: 이중 확장자, 확장자-내용 불일치 등)"},
+                    "file_nature": {"type": "string", "description": "파일 성격 요약 (예: 문서/스크립트/실행파일 등 파일의 종류와 특성)"},
+                    "obfuscation_encryption": {"type": "string", "description": "난독화/암호화 여부 요약 (예: 인코딩된 문자열, 암호화 흔적 유무)"},
+                    "structure_validation": {"type": "string", "description": "파일 구조 검증 결과 요약 (예: 매직바이트 일치 여부, 구조 손상 여부)"}
+                },
+                "required": ["extension_anomaly", "file_nature", "obfuscation_encryption", "structure_validation"],
+                "additionalProperties": False
+            },
             "evidence": {"type": "array", "items": {"type": "string"}},
             "related_cve": {
                 "type": "array",
@@ -64,7 +94,7 @@ REPORT_SCHEMA = {
             },
             "recommended_actions": {"type": "array", "items": {"type": "string"}}
         },
-        "required": ["risk_level", "summary", "evidence", "related_cve", "recommended_actions"],
+        "required": ["risk_level", "summary", "key_features", "evidence", "related_cve", "recommended_actions"],
         "additionalProperties": False
     },
     "strict": True
@@ -123,6 +153,12 @@ def _fallback_report(prediction: dict, error_msg: str) -> dict:
     return {
         "risk_level": risk_level,
         "summary": f"멍... 분석 중 오류가 발생해서 자동 리포트를 만들지 못했습니다. (오류: {error_msg})",
+        "key_features": {
+            "extension_anomaly": "관련 정보 없음 (3단계 분석 실패)",
+            "file_nature": "관련 정보 없음 (3단계 분석 실패)",
+            "obfuscation_encryption": "관련 정보 없음 (3단계 분석 실패)",
+            "structure_validation": "관련 정보 없음 (3단계 분석 실패)"
+        },
         "evidence": ["3단계 AI 분석 실패 — 2단계 ML 판단 결과만 참고하세요."],
         "related_cve": [],
         "recommended_actions": ["관리자에게 문의하거나 재시도해주세요."]
