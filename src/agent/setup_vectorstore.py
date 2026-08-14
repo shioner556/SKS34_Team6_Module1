@@ -1,7 +1,7 @@
 """CVE 벡터스토어 설정 스크립트
 
 사용법:
-  python setup_vectorstore.py
+  python src/agent/setup_vectorstore.py
 
   - VECTOR_STORE_ID가 .env에 없으면: 벡터스토어 최초 생성
   - VECTOR_STORE_ID가 .env에 있으면: 기존 파일 교체 (ID 유지)
@@ -15,8 +15,10 @@ from openai import OpenAI
 load_dotenv()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-DATA_DIR = Path(__file__).parent / "data" / "cve"
-ENV_PATH = Path(__file__).parent / ".env"
+# src/agent/ 기준으로 프로젝트 루트는 두 단계 위
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+DATA_DIR = PROJECT_ROOT / "data" / "cve"
+ENV_PATH = PROJECT_ROOT / ".env"
 
 
 def _get_files() -> list[Path]:
