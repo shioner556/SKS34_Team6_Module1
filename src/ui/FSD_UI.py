@@ -166,7 +166,7 @@ if uploaded_files and sniff_clicked and results:
                     ],
                 })
 
-            with st.expander("**📌판단 증거(🐾눌러서 자세히보기)**"):
+            with st.expander("**📌판단 거(🐾눌러서 자세히보기)**"):
              for evidence in report["evidence"]:
                 st.write(f"- {evidence}")
 
