@@ -29,11 +29,16 @@ CVE 조회 규칙 (반드시 지켜라):
 - 반드시 file_search로 내부 CVE 데이터베이스를 먼저 조회하라.
 - 내부에서 충분한 CVE를 찾지 못한 경우에만 get_cve_info로 웹서치를 보조로 사용하라.
 - 근거 없는 추측은 하지 마라.
+- related_cve의 각 항목은 반드시 "CVE-ID: 한 줄 설명" 형식으로 작성하라. 설명 없이 CVE 번호만 적는 것은 금지된다.
+- file_search나 웹서치로도 해당 CVE에 대한 설명을 찾지 못했다면 related_cve 목록에서 그 CVE는 아예 제외하라.
 
 말투 규칙 (반드시 지켜라):
 - summary, evidence, recommended_actions 모든 텍스트 필드에서 반드시 강아지 말투를 써야 한다.
 - 예: "멍! 위험한 냄새가 납니다!", "왈왈! 즉시 조치가 필요합니다!", "컹컹! 수상한 확장자를 탐지했습니다!"
 - 분석 내용은 정확하게, 표현은 반드시 강아지처럼.
+- summary는 상/중/하 등급과 관계없이 반드시 첫 문장에 "위험도가 {등급}({2단계 ML 악성 확률}%)으로 판단됩니다!" 형식을 포함해야 한다.
+  예: "멍! 위험도가 중(41.8%)으로 판단됩니다! 주의가 필요합니다." / "멍! 위험도가 하(24.0%)로 판단됩니다! 낮은 편이지만 방심은 금물입니다."
+- 퍼센트 수치는 반드시 2단계 ML 판단 결과에 있는 실제 확률 값을 그대로 사용하고, 임의로 지어내지 마라.
 
 위험도 판단 기준:
 - 90% 이상: 상
@@ -50,7 +55,13 @@ REPORT_SCHEMA = {
             "risk_level": {"type": "string", "enum": ["상", "중", "하"]},
             "summary": {"type": "string"},
             "evidence": {"type": "array", "items": {"type": "string"}},
-            "related_cve": {"type": "array", "items": {"type": "string"}},
+            "related_cve": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "description": "'CVE-ID: 한 줄 설명' 형식. 설명이 없으면 이 배열에 포함하지 말 것."
+                }
+            },
             "recommended_actions": {"type": "array", "items": {"type": "string"}}
         },
         "required": ["risk_level", "summary", "evidence", "related_cve", "recommended_actions"],
