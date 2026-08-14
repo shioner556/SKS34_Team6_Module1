@@ -107,14 +107,14 @@ col1, mid, col2 = st.columns([10, 1, 10])
 results = []
 
 with col1:
-    st.subheader('1단계 결과')
+    st.subheader('파일을 받았어요!')
     # 파일 탐지중 메세지 구분
     #---------------------------------------
     if uploaded_files and sniff_clicked :
         dots = ["", ".", "..", "..."]
         total_files = len(uploaded_files)
         placeholder = st.empty()
-        placeholder.markdown(f"🐶📁 가방 겉면 킁킁하는 중...\n\n(진행도 0/{total_files})")
+        placeholder.markdown(f"🐶📁 파일 겉면 킁킁하는 중...\n\n(진행도 0/{total_files})")
         #----------------------------------------
         # 연결코드
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -126,7 +126,7 @@ with col1:
                 results.append((uploaded_file.name, stage1_result, stage2_result))
                 # 1단계 탐지하면서 진행도로 표시
                 placeholder.markdown(
-                    f"🐶📁 가방 겉면 킁킁하는 중...{dots[idx % 4]}\n\n(진행도 {idx}/{total_files})"
+                    f"🐶📁 파일 겉면 킁킁하는 중...{dots[idx % 4]}\n\n(진행도 {idx}/{total_files})"
                 )
 
                 # 상세보기 필요할 때(팀원이 보여달라고 할 때) 아래 주석 해제
@@ -134,7 +134,7 @@ with col1:
                   #st.json(stage1_result)
         placeholder.empty()
         if results:
-            st.success("📁가방 확인 완료!")
+            st.success("📁파일 확인 완료!")
 
 with mid:
     st.markdown(
@@ -144,7 +144,7 @@ with mid:
 
 
 with col2:
-    st.subheader('2단계 결과')
+    st.subheader('파일을 열었어요!')
     if uploaded_files and sniff_clicked and results:
         # 2단계 파일 탐지하면서 진행도로 표시
         dots = ["", ".", "..", "..."]
@@ -152,7 +152,7 @@ with col2:
         placeholder = st.empty()
         for idx, (file_name, _, stage2_result) in enumerate(results, start=1):
             placeholder.markdown(
-                f"🐶📂 가방 안까지 킁킁하는 중...{dots[idx % 4]}\n\n(진행도 {idx}/{total_files})"
+                f"🐶📂 파일 안까지 킁킁하는 중...{dots[idx % 4]}\n\n(진행도 {idx}/{total_files})"
             )
             time.sleep(0.4)
 
@@ -165,11 +165,11 @@ with col2:
                   #}
                   #st.json(summary)
         placeholder.empty()
-        st.success("📂가방 안쪽까지 확인완료!")
+        st.success("📂파일 안쪽까지 확인완료!")
 
 st.write('---')
 
-st.subheader('3단계 결과')
+st.subheader('전부 확인 완료!')
 success_placeholder = st.empty()  # 완료 메시지가 나올 자리(서브헤더 바로 밑)를 미리 예약
 if uploaded_files and sniff_clicked and results:
     total_files = len(results)
@@ -198,4 +198,4 @@ if uploaded_files and sniff_clicked and results:
                 st.write(f"- {action}")
 
     placeholder.empty()
-    success_placeholder.success("🔍 최종 분석 완료!")  
+    success_placeholder.success("📋보고서로 보여드릴게요!")    
