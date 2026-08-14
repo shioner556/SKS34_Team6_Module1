@@ -29,6 +29,8 @@ CVE 조회 규칙 (반드시 지켜라):
 - 반드시 file_search로 내부 CVE 데이터베이스를 먼저 조회하라.
 - 내부에서 충분한 CVE를 찾지 못한 경우에만 get_cve_info로 웹서치를 보조로 사용하라.
 - 근거 없는 추측은 하지 마라.
+- related_cve의 각 항목은 반드시 "CVE-ID: 한 줄 설명" 형식으로 작성하라. 설명 없이 CVE 번호만 적는 것은 금지된다.
+- file_search나 웹서치로도 해당 CVE에 대한 설명을 찾지 못했다면 related_cve 목록에서 그 CVE는 아예 제외하라.
 
 말투 규칙 (반드시 지켜라):
 - summary, evidence, recommended_actions 모든 텍스트 필드에서 반드시 강아지 말투를 써야 한다.
@@ -50,7 +52,13 @@ REPORT_SCHEMA = {
             "risk_level": {"type": "string", "enum": ["상", "중", "하"]},
             "summary": {"type": "string"},
             "evidence": {"type": "array", "items": {"type": "string"}},
-            "related_cve": {"type": "array", "items": {"type": "string"}},
+            "related_cve": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "description": "'CVE-ID: 한 줄 설명' 형식. 설명이 없으면 이 배열에 포함하지 말 것."
+                }
+            },
             "recommended_actions": {"type": "array", "items": {"type": "string"}}
         },
         "required": ["risk_level", "summary", "evidence", "related_cve", "recommended_actions"],
@@ -118,8 +126,9 @@ def _fallback_report(prediction: dict, error_msg: str) -> dict:
     }
 
 
-def analyze_with_agent(features: dict, prediction: dict) -> dict:
+def analyze_with_agent(features: dict, prediction: dict, model: str = MODEL) -> dict:
     """3단계: OpenAI Responses API + 벡터스토어로 종합 분석 후 리포트 반환.
+    model: 사용할 OpenAI 모델 (기본값: gpt-4o-mini). UI에서 모델 선택 시 전달.
     실패 시에도 동일 스키마의 fallback 리포트를 반환한다 (예외를 밖으로 던지지 않음)."""
 
     try:
@@ -136,7 +145,7 @@ def analyze_with_agent(features: dict, prediction: dict) -> dict:
 
         # 1차 호출: file_search(자동) + 함수 tool 사용 여부 판단
         response = client.responses.create(
-            model=MODEL,
+            model=model,
             instructions=SYSTEM_PROMPT,
             input=user_msg,
             tools=tools
@@ -164,7 +173,7 @@ def analyze_with_agent(features: dict, prediction: dict) -> dict:
         # 2차 호출: 구조화된 최종 리포트 생성
         final_input = function_outputs if function_outputs else "위 분석을 바탕으로 최종 리포트를 작성해줘."
         final = client.responses.create(
-            model=MODEL,
+            model=model,
             instructions=SYSTEM_PROMPT,
             previous_response_id=response.id,
             input=final_input,
