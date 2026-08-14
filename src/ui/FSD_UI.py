@@ -20,6 +20,12 @@ def _mock_report(file_name: str) -> dict:
     return {
         "risk_level": "중",
         "summary": f"[테스트 모드] '{file_name}' 가짜 리포트입니다. 실제 API를 호출하지 않았습니다.",
+        "key_features": {
+            "extension_anomaly": "테스트용 - 확장자 이상 없음",
+            "file_nature": "테스트용 - 일반 문서 파일",
+            "obfuscation_encryption": "테스트용 - 난독화 흔적 없음",
+            "structure_validation": "테스트용 - 구조 정상",
+        },
         "evidence": ["테스트용 근거 1", "테스트용 근거 2"],
         "related_cve": ["CVE-0000-0000"],
         "recommended_actions": ["테스트용 대응 방안 1", "테스트용 대응 방안 2"],
@@ -183,6 +189,19 @@ if uploaded_files and sniff_clicked and results:
 
         with st.expander(f"📂📄 {file_name} — 🚨위험도: {report['risk_level']} (🐾눌러 자세히보기)"):
             st.write(report["summary"])
+
+            key_features = report.get("key_features")
+            if key_features:
+                st.write("**핵심 특징 요약**") 
+                st.table({
+                    "항목": ["확장자 이상", "파일 성격", "난독화/암호화", "구조 검증"],
+                    "내용": [
+                        key_features.get("extension_anomaly", "-"),
+                        key_features.get("file_nature", "-"),
+                        key_features.get("obfuscation_encryption", "-"),
+                        key_features.get("structure_validation", "-"),
+                    ],
+                })
 
             with st.expander("**📌판단 증거(🐾눌러서 자세히보기)**"):
              for evidence in report["evidence"]:
