@@ -166,7 +166,7 @@ if uploaded_files and sniff_clicked and results:
                     ],
                 })
 
-            with st.expander("**📌판단 거(🐾눌러서 자세히보기)**"):
+            with st.expander("**📌판단 근거(🐾눌러서 자세히보기)**"):
              for evidence in report["evidence"]:
                 st.write(f"- {evidence}")
 
@@ -180,4 +180,4 @@ if uploaded_files and sniff_clicked and results:
                 st.write(f"- {action}")
 
     placeholder.empty()
-    success_placeholder.success("📋보고서로 보여드릴게요!")    
+    success_placeholder.success("📋보고서로 보여드릴게요!")     
