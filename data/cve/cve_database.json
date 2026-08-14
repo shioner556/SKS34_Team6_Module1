@@ -1,8 +1,8 @@
 [
   {
     "id": "CVE-2017-12615",
-    "keywords": ["jsp", "tomcat", "upload", "webshell", "PUT"],
-    "description": "Apache Tomcat에서 PUT 메서드를 통해 JSP 파일을 업로드하여 원격 코드 실행이 가능한 취약점. 웹셸 업로드에 직접 악용됨."
+    "keywords": ["jsp", "tomcat", "upload", "webshell", "PUT", "windows"],
+    "description": "Apache Tomcat에서 PUT 메서드를 통해 JSP 파일을 업로드하여 원격 코드 실행이 가능한 취약점. Windows 환경에서 readonly 매개변수가 false로 설정된 경우에 발생하며, 웹셸 업로드에 직접 악용됨."
   },
   {
     "id": "CVE-2018-11776",
@@ -31,8 +31,8 @@
   },
   {
     "id": "CVE-2023-44487",
-    "keywords": ["http2", "dos", "rapid reset", "webserver"],
-    "description": "HTTP/2 Rapid Reset Attack. 웹서버 자원 고갈 공격으로 파일 업로드 서비스 마비에 활용됨."
+    "keywords": ["http2", "dos", "ddos", "rapid reset", "webserver", "availability"],
+    "description": "HTTP/2 Rapid Reset Attack. HTTP/2 프로토콜 구조적 결함을 이용한 DDoS 공격으로, 웹서버 가용성을 파괴하여 서비스 전체를 마비시킴. 파일 업로드 취약점은 아니나 서버 운영 가용성에 직접적인 영향을 줌."
   },
   {
     "id": "CVE-2016-3081",
@@ -48,5 +48,30 @@
     "id": "CVE-2018-1000861",
     "keywords": ["jenkins", "groovy", "rce", "upload", "script"],
     "description": "Jenkins Groovy 스크립트 엔진을 통한 RCE. 업로드된 스크립트 파일 실행에 활용됨."
+  },
+  {
+    "id": "CVE-2024-4577",
+    "keywords": ["php", "cgi", "rce", "windows", "argument injection", "webshell"],
+    "description": "PHP CGI 모드에서 Windows 환경의 인자 주입(Argument Injection) 취약점. 공격자가 임의의 PHP 코드를 원격 실행 가능하며, 웹셸 업로드 및 실행에 직접 악용됨. CVSS 9.8 Critical."
+  },
+  {
+    "id": "CVE-2023-22527",
+    "keywords": ["confluence", "ssti", "rce", "template injection", "webshell"],
+    "description": "Atlassian Confluence Server/Data Center의 서버사이드 템플릿 인젝션(SSTI) 취약점. 인증 없이 원격 코드 실행이 가능하며 웹셸 배포에 악용됨. CVSS 10.0 Critical."
+  },
+  {
+    "id": "CVE-2024-25600",
+    "keywords": ["wordpress", "bricks", "rce", "php", "upload", "webshell"],
+    "description": "WordPress Bricks Builder 테마의 인증 없는 원격 코드 실행 취약점. PHP 코드 실행을 통해 웹셸 업로드 및 서버 장악에 악용됨. CVSS 9.8 Critical."
+  },
+  {
+    "id": "CVE-2023-3460",
+    "keywords": ["wordpress", "plugin", "upload", "privilege escalation", "webshell"],
+    "description": "WordPress Ultimate Member 플러그인의 파일 업로드 검증 우회 취약점. 인증 없이 임의 파일을 업로드하여 웹셸 실행 및 관리자 권한 탈취 가능. CVSS 9.8 Critical."
+  },
+  {
+    "id": "CVE-2021-44228",
+    "keywords": ["log4j", "log4shell", "jndi", "rce", "java", "webshell"],
+    "description": "Apache Log4j2의 JNDI 인젝션 취약점(Log4Shell). 로그에 기록되는 사용자 입력을 통해 원격 코드 실행 가능. 파일 업로드 요청의 파일명/헤더에도 삽입되어 웹셸 배포에 활용됨. CVSS 10.0 Critical."
   }
 ]
