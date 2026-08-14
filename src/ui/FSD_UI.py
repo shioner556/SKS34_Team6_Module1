@@ -4,8 +4,15 @@ from pathlib import Path
 import time
 import random
 import streamlit as st
+
 # src/ 를 sys.path에 추가
-sys.path.append(str(Path(__file__).resolve().parent.parent))  
+# sys.path.append(str(Path(__file__).resolve().parent.parent))  
+
+# 위 코드에 에러가 좀 있어서 수정합니다.
+# 수정 후: sys.path 최상단(0번 인덱스)에 src 경로 삽입
+src_path = str(Path(__file__).resolve().parent.parent)
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
 
 # 1단계 코드 임포트
 from preprocessing.preprocessor import preprocess
