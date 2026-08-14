@@ -2,7 +2,7 @@
 Static File Feature Extractor
 =============================
 
-Output Feature 명세(37개)를 기준으로 파일 하나에서 정적 Feature를 추출한다.
+Output Feature 명세(38개)를 기준으로 파일 하나에서 정적 Feature를 추출한다.
 
 원칙:
 - 파일을 실행하지 않는다.
@@ -885,6 +885,8 @@ def analyze_filename(filename: str) -> Dict[str, Any]:
     extension_count = len(suffixes)
     has_double_extension = int(extension_count >= 2)
 
+    extension_category = _detect_extension_category(name)
+
     last_ext = _last_known_extension(name)
     has_uppercase_extension = int(
         bool(last_ext) and any(ch.isupper() for ch in name.rsplit(".", 1)[-1])
@@ -903,6 +905,7 @@ def analyze_filename(filename: str) -> Dict[str, Any]:
         )
         special_char_ratio = special_count / len(name)
 
+
     return {
         "filename_length": len(name),
         "extension_count": extension_count,
@@ -910,7 +913,7 @@ def analyze_filename(filename: str) -> Dict[str, Any]:
         "has_uppercase_extension": has_uppercase_extension,
         "has_unicode_control_char": has_unicode_control_char,
         "special_char_ratio": special_char_ratio,
-        "extension_category": _detect_extension_category(name),
+        "extension_category": extension_category,
         "is_executable_extension": int(
             any(ext in EXECUTABLE_EXTENSIONS for ext in suffixes)
         ),
@@ -960,8 +963,10 @@ def analyze_file_type(
 
     if claimed_mime is None:
         # Content-Type이 제공되지 않은 경우와 정상 일치(0)를 구분한다.
-        claimed_mime_mismatch = None
+        has_content_type = 0
+        claimed_mime_mismatch = 0
     else:
+        has_content_type = 1
         claimed = claimed_mime.lower().split(";", 1)[0].strip()
         actual = (detected_mime or "").lower().split(";", 1)[0].strip()
         claimed_mime_mismatch = int(bool(actual) and claimed != actual)
@@ -970,6 +975,7 @@ def analyze_file_type(
         "magic_bytes_known": magic_bytes_known,
         "magic_bytes_valid": magic_bytes_valid,
         "extension_mime_mismatch": extension_mime_mismatch,
+        "has_content_type": has_content_type,
         "claimed_mime_mismatch": claimed_mime_mismatch,
     }
 
@@ -1481,6 +1487,7 @@ FEATURE_ORDER = [
     "magic_bytes_known",
     "magic_bytes_valid",
     "extension_mime_mismatch",
+    "has_content_type",
     "claimed_mime_mismatch",
     "embedded_file_signature_count",
     "byte_entropy",
