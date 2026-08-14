@@ -85,20 +85,50 @@ def licence_allowed(name: str, usage_terms: str, license_url: str) -> bool:
     return any(token in combined for token in ALLOWED_LICENSES)
 
 
-def api_get(session: requests.Session, params: dict[str, Any], retries: int = 4) -> dict[str, Any]:
+def api_get(
+    session: requests.Session,
+    params: dict[str, Any],
+    retries: int = 8,
+    api_delay: float = 0.5,
+) -> dict[str, Any]:
+    last_error = "unknown error"
     for attempt in range(retries):
         try:
             response = session.get(API_URL, params=params, timeout=(10, 45))
-            if response.status_code == 429:
-                time.sleep(min(2 ** attempt, 15))
+            if response.status_code in {429, 502, 503, 504}:
+                retry_after = response.headers.get("Retry-After", "")
+                try:
+                    wait_seconds = float(retry_after)
+                except ValueError:
+                    wait_seconds = min(2 ** attempt, 60)
+                wait_seconds = max(wait_seconds, api_delay)
+                last_error = f"HTTP {response.status_code}; retry after {wait_seconds:g}s"
+                print(f"Wikimedia API busy ({last_error}), retry {attempt + 1}/{retries}")
+                time.sleep(wait_seconds)
                 continue
             response.raise_for_status()
-            return response.json()
-        except (requests.RequestException, ValueError):
+            payload = response.json()
+            api_error = payload.get("error")
+            if api_error:
+                code = api_error.get("code", "unknown")
+                message = api_error.get("info", "Wikimedia API error")
+                if code == "maxlag":
+                    wait_seconds = min(2 ** attempt, 30)
+                    last_error = f"maxlag: {message}"
+                    print(f"Wikimedia API lagged, waiting {wait_seconds}s ({attempt + 1}/{retries})")
+                    time.sleep(wait_seconds)
+                    continue
+                raise RuntimeError(f"Wikimedia API {code}: {message}")
+            time.sleep(api_delay)
+            return payload
+        except (requests.RequestException, ValueError) as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
             if attempt + 1 == retries:
-                raise
-            time.sleep(min(2 ** attempt, 10))
-    raise RuntimeError("unreachable")
+                raise RuntimeError(f"Wikimedia API failed after {retries} attempts: {last_error}") from exc
+            wait_seconds = min(2 ** attempt, 30)
+            print(f"Wikimedia API request failed ({last_error}), waiting {wait_seconds}s")
+            time.sleep(wait_seconds)
+    raise RuntimeError(f"Wikimedia API failed after {retries} attempts: {last_error}")
 
 
 def find_candidates(
@@ -107,6 +137,7 @@ def find_candidates(
     thumb_width: int,
     max_candidates: int,
     requested_format: str,
+    api_delay: float,
 ) -> list[Candidate]:
     found: dict[int, Candidate] = {}
     for query in queries:
@@ -122,7 +153,7 @@ def find_candidates(
                 "maxlag": 5,
             }
             params.update(continuation)
-            payload = api_get(session, params)
+            payload = api_get(session, params, api_delay=api_delay)
             for page in payload.get("query", {}).get("pages", []):
                 info_list = page.get("imageinfo") or []
                 if not info_list:
@@ -219,6 +250,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--thumb-width", type=int, default=512, help="Requested thumbnail width in pixels")
     parser.add_argument("--workers", type=int, default=16, help="Concurrent image downloads (recommended: 8-24)")
     parser.add_argument("--candidate-factor", type=int, default=4, help="Candidates searched per missing image")
+    parser.add_argument("--api-delay", type=float, default=0.5, help="Delay after each successful API request")
     parser.add_argument("--query", action="append", dest="queries", help="Repeatable Commons search term")
     parser.add_argument("--timeout", type=int, default=45)
     parser.add_argument("--max-file-mb", type=float, default=10.0)
@@ -253,8 +285,8 @@ def main() -> int:
         limits = parse_limits(args.limit)
     except argparse.ArgumentTypeError as exc:
         raise SystemExit(str(exc)) from exc
-    if args.thumb_width < 64 or args.workers < 1:
-        raise SystemExit("--workers must be positive; --thumb-width must be at least 64")
+    if args.thumb_width < 64 or args.workers < 1 or args.api_delay < 0:
+        raise SystemExit("--workers must be positive; --thumb-width >= 64 and --api-delay >= 0 are required")
 
     output = args.output.resolve()
     metadata_dir = output / "metadata"
@@ -282,7 +314,7 @@ def main() -> int:
             continue
         candidate_count = max(missing * args.candidate_factor, missing + 30)
         print(f"Searching {format_name}: target {missing}, up to {candidate_count} candidates...")
-        found = find_candidates(session, queries, args.thumb_width, candidate_count, format_name)
+        found = find_candidates(session, queries, args.thumb_width, candidate_count, format_name, args.api_delay)
         candidates.extend(c for c in found if c.page_id not in existing_pages)
     print(f"Downloading with {args.workers} workers from {len(candidates)} candidates...")
 
