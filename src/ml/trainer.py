@@ -18,7 +18,13 @@ def load_datasets(data_dir:str) -> pd.DataFrame:
     print('===== 데이터셋 로드 시작 =====')
     print('데이터셋 로드중...')
 
-    # 경로 안 모든 csv 파일 경로 수집
+    # dataset_test.csv는 로드 대상에서 제외
+    csv_files = [
+        f for f in glob.glob(os.path.join(data_dir, '*.csv')) 
+        if not os.path.basename(f).startswith('dataset_test')
+    ]
+
+    # 경로 안 모든 csv 파일 경로 수집 -> 실제 테스트에서 사용
     csv_files = glob.glob(os.path.join(data_dir, '*.csv'))
 
     if not csv_files:
@@ -47,17 +53,47 @@ def load_datasets(data_dir:str) -> pd.DataFrame:
     print(f"===== 총 {len(df_list)}개 csv 파일 통합 완료 (총 샘플 수 : {len(combined_df)}) ======\n")
     return combined_df
 
+# 다운 샘플링 : 확장자별 데이터 불균형을 해소하기 위해 사용(.pdf)
+def downsample_by_extension(df: pd.DataFrame, ext_col: str = 'extension_category', max_samples: int = 2000) -> pd.DataFrame:
+    print('===== 다운 샘플링 시작(최대 샘플 수 2000개로 설정) =====')
+    if ext_col not in df.columns:
+        print(f'[경고] {ext_col} 컬럼을 찾을 수 없어 다운샘플링을 진행하지 않습니다.')
+        return df
+
+    sampled_df = []
+    for ext, group in df.groupby(ext_col):
+        # max_samples 수를 넘어가는 확장자는 지정한 max_samples 수만큼 무작위 추출
+        if len(group) > max_samples:
+            sampled_group = group.sample(n=max_samples, random_state=42)
+            sampled_df.append(sampled_group)
+        else: 
+            sampled_df.append(group)
+
+    result_df = pd.concat(sampled_df, ignore_index=True).sample(frac=1, random_state=42).reset_index(drop=True)
+
+    print('===============================================================')
+    print(f'기존 샘플 수 : {len(df)}개 / 조정된 샘플 수 : {len(result_df)}개(확장자당 최대 {max_samples}개)')
+    print('===============================================================')
+    return result_df
+
+
 # 모델 학습   -> feature 내용 파악해서 수정할 것
 def train_model(df:pd.DataFrame):
     # 전처리 및 feature engineering
     print('전처리 및 Feature Engineering 진행 중...')
 
+    # 정답 라벨을 매핑을 통해 처리(악성 : 1, 정상 : 0)
+    label_mapping = {
+        "malware": 1, "1": 1, 1: 1,
+        "benign": 0, "0": 0, 0: 0
+    }
+    df['label'] = df['label'].map(label_mapping)
+
+    # 다운 샘플링 : extension_category별로 2000개의 샘플 수 제한
+    df = downsample_by_extension(df, ext_col='extension_category', max_samples=2000)
+
     # 범주형 변수 처리 : extension_category(파일의 종류)
     df = pd.get_dummies(df, columns=['extension_category'], drop_first=False)
-
-    # 정답 라벨을 매핑을 통해 처리(악성 : 1, 정상 : 0)
-    label_mapping = {"malware": 1, "benign": 0}
-    df['label'] = df['label'].map(label_mapping)
 
     # 학습에서 제외할 column 정의 : filename, file_path, label
     drop_cols = ['filename', 'filepath', 'label', 'suspicious_string_count']
@@ -98,7 +134,7 @@ def train_model(df:pd.DataFrame):
     cv_strategy = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
     # RandomForest 모델 생성 및 학습
-    base_model = RandomForestClassifier(random_state=42)
+    base_model = RandomForestClassifier(class_weight='balanced', random_state=42)
 
     # GridSearchCV 객체 생성 (하이퍼파라미터 자동 탐색을 위한 객체)
     grid_search = GridSearchCV(
@@ -106,6 +142,7 @@ def train_model(df:pd.DataFrame):
         param_grid=param_grid,      # 하이퍼파라미터 후보군 지정
         scoring='recall',           # 최적 파라미터를 선정할 때 기준이 되는 지표
         cv=cv_strategy,
+        n_jobs=-1
     )
 
     print('====== 모델 학습 시작 =====')
