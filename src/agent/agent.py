@@ -31,6 +31,15 @@ SYSTEM_PROMPT = """너는 웹 서버 파일 업로드 취약점을 전문으로 
 - 2단계 근거: 판정 결과(예: High_risk, Benign)와 악성 확률(%)을 그대로 인용해서 최소 1개 항목에 포함하라.
 - "위험해 보입니다" 같은 막연한 서술 금지 — 반드시 입력값의 실제 수치나 명칭을 근거로 제시하라.
 
+key_features 작성 규칙 (반드시 지켜라):
+- 1단계 features(38개 컬럼) 중 아래 4개 항목에 해당하는 내용만 뽑아 각 1~2문장으로 요약하라. UI 표 노출용이므로 간결하게 작성한다.
+  - extension_anomaly: 확장자 이상 여부
+  - file_nature: 파일 성격
+  - obfuscation_encryption: 난독화/암호화 여부
+  - structure_validation: 파일 구조 검증 결과
+- 해당하는 값이 features에 없으면 "관련 정보 없음"이라고 명시하라 (임의로 지어내지 마라).
+- 이 필드는 강아지 말투를 쓰지 말고 담백한 사실 요약체로 작성하라.
+
 CVE 조회 규칙 (반드시 지켜라):
 - 반드시 file_search로 내부 CVE 데이터베이스를 먼저 조회하라.
 - 내부에서 충분한 CVE를 찾지 못한 경우에만 get_cve_info로 웹서치를 보조로 사용하라.
@@ -61,6 +70,18 @@ REPORT_SCHEMA = {
         "properties": {
             "risk_level": {"type": "string", "enum": ["상", "중", "하"]},
             "summary": {"type": "string"},
+            "key_features": {
+                "type": "object",
+                "description": "1단계 features 38개 중 UI에 노출할 핵심 4개 항목 요약.",
+                "properties": {
+                    "extension_anomaly": {"type": "string", "description": "확장자 이상 여부 요약 (예: 이중 확장자, 확장자-내용 불일치 등)"},
+                    "file_nature": {"type": "string", "description": "파일 성격 요약 (예: 문서/스크립트/실행파일 등 파일의 종류와 특성)"},
+                    "obfuscation_encryption": {"type": "string", "description": "난독화/암호화 여부 요약 (예: 인코딩된 문자열, 암호화 흔적 유무)"},
+                    "structure_validation": {"type": "string", "description": "파일 구조 검증 결과 요약 (예: 매직바이트 일치 여부, 구조 손상 여부)"}
+                },
+                "required": ["extension_anomaly", "file_nature", "obfuscation_encryption", "structure_validation"],
+                "additionalProperties": False
+            },
             "evidence": {"type": "array", "items": {"type": "string"}},
             "related_cve": {
                 "type": "array",
@@ -71,7 +92,7 @@ REPORT_SCHEMA = {
             },
             "recommended_actions": {"type": "array", "items": {"type": "string"}}
         },
-        "required": ["risk_level", "summary", "evidence", "related_cve", "recommended_actions"],
+        "required": ["risk_level", "summary", "key_features", "evidence", "related_cve", "recommended_actions"],
         "additionalProperties": False
     },
     "strict": True
@@ -130,6 +151,12 @@ def _fallback_report(prediction: dict, error_msg: str) -> dict:
     return {
         "risk_level": risk_level,
         "summary": f"멍... 분석 중 오류가 발생해서 자동 리포트를 만들지 못했습니다. (오류: {error_msg})",
+        "key_features": {
+            "extension_anomaly": "관련 정보 없음 (3단계 분석 실패)",
+            "file_nature": "관련 정보 없음 (3단계 분석 실패)",
+            "obfuscation_encryption": "관련 정보 없음 (3단계 분석 실패)",
+            "structure_validation": "관련 정보 없음 (3단계 분석 실패)"
+        },
         "evidence": ["3단계 AI 분석 실패 — 2단계 ML 판단 결과만 참고하세요."],
         "related_cve": [],
         "recommended_actions": ["관리자에게 문의하거나 재시도해주세요."]
