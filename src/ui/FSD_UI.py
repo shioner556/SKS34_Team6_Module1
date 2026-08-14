@@ -4,15 +4,8 @@ from pathlib import Path
 import time
 import random
 import streamlit as st
-
 # src/ 를 sys.path에 추가
-# sys.path.append(str(Path(__file__).resolve().parent.parent))  
-
-# 위 코드에 에러가 좀 있어서 수정합니다.
-# 수정 후: sys.path 최상단(0번 인덱스)에 src 경로 삽입
-src_path = str(Path(__file__).resolve().parent.parent)
-if src_path not in sys.path:
-    sys.path.insert(0, src_path)
+sys.path.append(str(Path(__file__).resolve().parent.parent))  
 
 # 1단계 코드 임포트
 from preprocessing.preprocessor import preprocess
@@ -177,17 +170,18 @@ with col2:
 st.write('---')
 
 st.subheader('3단계 결과')
+success_placeholder = st.empty()  # 완료 메시지가 나올 자리(서브헤더 바로 밑)를 미리 예약
 if uploaded_files and sniff_clicked and results:
     total_files = len(results)
     placeholder = st.empty()
     for idx, (file_name, stage1_result, stage2_result) in enumerate(results, start=1):
-        placeholder.markdown(f"🐶🔍 최종 리포트 작성 중...\n\n(진행도 {idx}/{total_files})")
+        placeholder.markdown(f"🐶📄 최종 리포트 작성 중...\n\n(진행도 {idx}/{total_files})")
         if test_mode:
             report = _mock_report(file_name)
         else:
             report = analyze_with_agent(stage1_result, stage2_result)
 
-        with st.expander(f"📄 {file_name} — 위험도: {report['risk_level']}"):
+        with st.expander(f"📂📄 {file_name} — 위험도: {report['risk_level']} (🐾눌러 자세히보기)"):
             st.write(report["summary"])
 
             st.write("**판단 근거**")
@@ -195,13 +189,13 @@ if uploaded_files and sniff_clicked and results:
                 st.write(f"- {evidence}")
 
             if report["related_cve"]:
-                st.write("**관련 CVE**")
-                for cve in report["related_cve"]:
-                    st.write(f"- {cve}")
+                with st.expander("**관련 CVE(🐾눌러서 자세히보기)**"):
+                    for cve in report["related_cve"]:
+                        st.write(f"- {cve}")
 
             st.write("**대응 방안**")
             for action in report["recommended_actions"]:
                 st.write(f"- {action}")
 
     placeholder.empty()
-    st.success("🔍 최종 분석 완료!")
+    success_placeholder.success("🔍 최종 분석 완료!")
