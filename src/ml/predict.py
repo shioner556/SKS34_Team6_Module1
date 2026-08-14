@@ -79,7 +79,7 @@ def predict_malware_risk(ml_features: dict) -> dict:
 
     if _model_instance is not None:
         prob_percent = round(_model_instance.predict_proba(df_input)[0][1] * 100, 1)
-        prediction = "Malicious" if prob_percent > 50.0 else "Benign"
+        prediction = "HIGH_RISK" if prob_percent > 50.0 else "BENIGN"
     else:
         print("[ML Module Warning] 학습된 모델 파일(.pkl)이 없어 기본 규칙 기반 추론으로 대체합니다.")
         score = 5.0
@@ -94,20 +94,24 @@ def predict_malware_risk(ml_features: dict) -> dict:
             score += 25
             
         prob_percent = min(score, 99.0)
-        prediction = "Malicious" if prob_percent > 50.0 else "Benign"
+        prediction = "HIGH_RISK" if prob_percent > 50.0 else "BENIGN"
 
+    # 위험 레벨(risk_level) UI 및 Agent용 규격화 ('상', '중', '하')
     if prob_percent >= 80.0:
-        risk_level = "HIGH (상)"
+        risk_level = "상"
     elif prob_percent >= 40.0:
-        risk_level = "MEDIUM (중)"
+        risk_level = "중"
     else:
-        risk_level = "LOW (하)"
+        risk_level = "하"
+
+    # 0.0 ~ 1.0 비율 확률값 계산 (예: 98.5% -> 0.985)
+    prob_ratio = round(prob_percent / 100.0, 4)
 
     return {
-        "prediction": prediction,
-        "malware_probability": f"{prob_percent}%",
-        "raw_probability": prob_percent,
-        "risk_level": risk_level,
+        "prediction": prediction,                  # 판정 결과: 'HIGH_RISK' 또는 'BENIGN'
+        "malware_probability": prob_ratio,          # 악성 확률: 0.0 ~ 1.0 (실수값)
+        "risk_level": risk_level,                  # 위험 레벨: '상', '중', '하'
+        "raw_probability_percent": prob_percent,   # 백분율 (%)
         "features_analyzed": ml_features
     }
 
@@ -158,7 +162,7 @@ if __name__ == "__main__":
 
             if label_col is not None:
                 raw_label = row[label_col]
-                actual_label = "Malicious" if str(raw_label).lower() in ["1", "true", "malicious", "malware"] else "Benign"
+                actual_label = "HIGH_RISK" if str(raw_label).lower() in ["1", "true", "malicious", "malware", "high_risk"] else "BENIGN"
                 
                 y_true.append(actual_label)
                 y_pred.append(pred_label)
@@ -167,9 +171,9 @@ if __name__ == "__main__":
                 status = "✅" if is_correct else "❌"
                 
                 # 📌 개별 데이터 추론 결과 실시간 출력
-                print(f"{status} [{file_identifier}] -> 예측: {pred_label} (실제: {actual_label}) | 확률: {res['malware_probability']} | 위험도: {res['risk_level']}", flush=True)
+                print(f"{status} [{file_identifier}] -> 예측: {pred_label} (실제: {actual_label}) | 확률: {res['malware_probability']*100:.1f}% | 위험도: {res['risk_level']}", flush=True)
             else:
-                print(f" [{file_identifier}] -> 예측: {pred_label} | 확률: {res['malware_probability']} | 위험도: {res['risk_level']}", flush=True)
+                print(f" [{file_identifier}] -> 예측: {pred_label} | 확률: {res['malware_probability']*100:.1f}% | 위험도: {res['risk_level']}", flush=True)
 
         # 성능 검증 평가 결과 출력
         if y_true and y_pred:
@@ -179,7 +183,7 @@ if __name__ == "__main__":
             print("="*50)
             print(f"전체 Accuracy (정확도): {acc:.2f}%")
             print("\n세부 리포트 (Classification Report):")
-            print(classification_report(y_true, y_pred, target_names=["Benign", "Malicious"]))
+            print(classification_report(y_true, y_pred, target_names=["BENIGN", "HIGH_RISK"]))
             print("="*50)
 
     except Exception as e:
