@@ -148,10 +148,7 @@ if uploaded_files and sniff_clicked and results:
     placeholder = st.empty()
     for idx, (file_name, stage1_result, stage2_result) in enumerate(results, start=1):
         placeholder.markdown(f"🐶📄 최종 리포트 작성 중...\n\n(진행도 {idx}/{total_files})")
-        if test_mode:
-            report = _mock_report(file_name)
-        else:
-            report = analyze_with_agent(stage1_result, stage2_result)
+        report = analyze_with_agent(stage1_result, stage2_result)
 
         with st.expander(f"📂📄 {file_name} — 🚨위험도: {report['risk_level']} (🐾눌러 자세히보기)"):
             st.write(report["summary"])
