@@ -11,6 +11,21 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 from preprocessing.preprocessor import preprocess
 # 2단계 코드 임포트
 from ml.predict import predict_malware_risk
+# 3단계 코드 임포트
+from agent.agent import analyze_with_agent
+
+
+def _mock_report(file_name: str) -> dict:
+    """테스트 모드용 가짜 3단계 리포트 (API 호출 없음)."""
+    return {
+        "risk_level": "중",
+        "summary": f"[테스트 모드] '{file_name}' 가짜 리포트입니다. 실제 API를 호출하지 않았습니다.",
+        "evidence": ["테스트용 근거 1", "테스트용 근거 2"],
+        "related_cve": ["CVE-0000-0000"],
+        "recommended_actions": ["테스트용 대응 방안 1", "테스트용 대응 방안 2"],
+    }
+
+
 # 배경화면
 st.markdown(
     """
@@ -81,6 +96,10 @@ with button_col:
  # 파일 업로드 초기화 버튼
 with reset_col:
  st.button('다시 하기', on_click=_reset_uploader)
+
+# 3단계는 실제 OpenAI API를 호출해서 토큰이 소모되니, 화면/흐름만 확인할 땐 이 모드로
+test_mode = st.checkbox('🧪 테스트 모드 (3단계 API 호출 없이 가짜 리포트로 확인)')
+
 st.write('---')
 col1, mid, col2 = st.columns([10, 1, 10])
 
@@ -149,5 +168,33 @@ with col2:
         st.success("📂가방 안쪽까지 확인완료!")
 
 st.write('---')
- 
-st.subheader('3단계 결과') 
+
+st.subheader('3단계 결과')
+if uploaded_files and sniff_clicked and results:
+    total_files = len(results)
+    placeholder = st.empty()
+    for idx, (file_name, stage1_result, stage2_result) in enumerate(results, start=1):
+        placeholder.markdown(f"🐶🔍 최종 리포트 작성 중...\n\n(진행도 {idx}/{total_files})")
+        if test_mode:
+            report = _mock_report(file_name)
+        else:
+            report = analyze_with_agent(stage1_result, stage2_result)
+
+        with st.expander(f"📄 {file_name} — 위험도: {report['risk_level']}"):
+            st.write(report["summary"])
+
+            st.write("**판단 근거**")
+            for evidence in report["evidence"]:
+                st.write(f"- {evidence}")
+
+            if report["related_cve"]:
+                st.write("**관련 CVE**")
+                for cve in report["related_cve"]:
+                    st.write(f"- {cve}")
+
+            st.write("**대응 방안**")
+            for action in report["recommended_actions"]:
+                st.write(f"- {action}")
+
+    placeholder.empty()
+    st.success("🔍 최종 분석 완료!")
