@@ -14,18 +14,6 @@ from ml.predict import predict_malware_risk
 # 3단계 코드 임포트
 from agent.agent import analyze_with_agent
 
-
-def _mock_report(file_name: str) -> dict:
-    """테스트 모드용 가짜 3단계 리포트 (API 호출 없음)."""
-    return {
-        "risk_level": "중",
-        "summary": f"[테스트 모드] '{file_name}' 가짜 리포트입니다. 실제 API를 호출하지 않았습니다.",
-        "evidence": ["테스트용 근거 1", "테스트용 근거 2"],
-        "related_cve": ["CVE-0000-0000"],
-        "recommended_actions": ["테스트용 대응 방안 1", "테스트용 대응 방안 2"],
-    }
-
-
 # 배경화면
 st.markdown(
     """
@@ -97,9 +85,6 @@ with button_col:
 with reset_col:
  st.button('다시 하기', on_click=_reset_uploader)
 
-# 3단계는 실제 OpenAI API를 호출해서 토큰이 소모되니, 화면/흐름만 확인할 땐 이 모드로
-test_mode = st.checkbox('🧪 테스트 모드 (3단계 API 호출 없이 가짜 리포트로 확인)')
-
 st.write('---')
 col1, mid, col2 = st.columns([10, 1, 10])
 
@@ -107,14 +92,14 @@ col1, mid, col2 = st.columns([10, 1, 10])
 results = []
 
 with col1:
-    st.subheader('1단계 결과')
+    st.subheader('파일을 받았어요!')
     # 파일 탐지중 메세지 구분
     #---------------------------------------
     if uploaded_files and sniff_clicked :
         dots = ["", ".", "..", "..."]
         total_files = len(uploaded_files)
         placeholder = st.empty()
-        placeholder.markdown(f"🐶📁 가방 겉면 킁킁하는 중...\n\n(진행도 0/{total_files})")
+        placeholder.markdown(f"🐶📁 파일 겉면 킁킁하는 중...\n\n(진행도 0/{total_files})")
         #----------------------------------------
         # 연결코드
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -126,15 +111,11 @@ with col1:
                 results.append((uploaded_file.name, stage1_result, stage2_result))
                 # 1단계 탐지하면서 진행도로 표시
                 placeholder.markdown(
-                    f"🐶📁 가방 겉면 킁킁하는 중...{dots[idx % 4]}\n\n(진행도 {idx}/{total_files})"
-                )
-
-                # 상세보기 필요할 때(팀원이 보여달라고 할 때) 아래 주석 해제
-                #with st.expander(f"📄 {uploaded_file.name} 상세보기"):
-                  #st.json(stage1_result)
+                    f"🐶📁 파일 겉면 킁킁하는 중...{dots[idx % 4]}\n\n(진행도 {idx}/{total_files})"
+                ) 
         placeholder.empty()
         if results:
-            st.success("📁가방 확인 완료!")
+            st.success("📁파일 확인 완료!")
 
 with mid:
     st.markdown(
@@ -144,7 +125,7 @@ with mid:
 
 
 with col2:
-    st.subheader('2단계 결과')
+    st.subheader('파일을 열었어요!')
     if uploaded_files and sniff_clicked and results:
         # 2단계 파일 탐지하면서 진행도로 표시
         dots = ["", ".", "..", "..."]
@@ -152,50 +133,51 @@ with col2:
         placeholder = st.empty()
         for idx, (file_name, _, stage2_result) in enumerate(results, start=1):
             placeholder.markdown(
-                f"🐶📂 가방 안까지 킁킁하는 중...{dots[idx % 4]}\n\n(진행도 {idx}/{total_files})"
+                f"🐶📂 파일 안까지 킁킁하는 중...{dots[idx % 4]}\n\n(진행도 {idx}/{total_files})"
             )
             time.sleep(0.4)
-
-            # 상세보기 필요할 때(팀원이 보여달라고 할 때) 아래 주석 해제
-            #with st.expander(f"📄 {file_name} 상세보기"):
-                  #summary = {
-                     #"판정 결과": stage2_result["prediction"],
-                     #"악성 확률": stage2_result["malware_probability"],
-                     #"위험 레벨": stage2_result["risk_level"],
-                  #}
-                  #st.json(summary)
         placeholder.empty()
-        st.success("📂가방 안쪽까지 확인완료!")
+        st.success("📂파일 안쪽까지 확인완료!")
 
 st.write('---')
 
-st.subheader('3단계 결과')
+st.subheader('전부 확인 완료!')
 success_placeholder = st.empty()  # 완료 메시지가 나올 자리(서브헤더 바로 밑)를 미리 예약
 if uploaded_files and sniff_clicked and results:
     total_files = len(results)
     placeholder = st.empty()
     for idx, (file_name, stage1_result, stage2_result) in enumerate(results, start=1):
         placeholder.markdown(f"🐶📄 최종 리포트 작성 중...\n\n(진행도 {idx}/{total_files})")
-        if test_mode:
-            report = _mock_report(file_name)
-        else:
-            report = analyze_with_agent(stage1_result, stage2_result)
+        report = analyze_with_agent(stage1_result, stage2_result)
 
-        with st.expander(f"📂📄 {file_name} — 위험도: {report['risk_level']} (🐾눌러 자세히보기)"):
+        with st.expander(f"📂📄 {file_name} — 🚨위험도: {report['risk_level']} (🐾눌러 자세히보기)"):
             st.write(report["summary"])
 
-            st.write("**판단 근거**")
-            for evidence in report["evidence"]:
+            key_features = report.get("key_features")
+            if key_features:
+                st.write("**핵심 특징 요약**") 
+                st.table({
+                    "항목": ["확장자 이상", "파일 성격", "난독화/암호화", "구조 검증"],
+                    "내용": [
+                        key_features.get("extension_anomaly", "-"),
+                        key_features.get("file_nature", "-"),
+                        key_features.get("obfuscation_encryption", "-"),
+                        key_features.get("structure_validation", "-"),
+                    ],
+                })
+
+            with st.expander("**📌판단 근거(🐾눌러서 자세히보기)**"):
+             for evidence in report["evidence"]:
                 st.write(f"- {evidence}")
 
             if report["related_cve"]:
-                with st.expander("**관련 CVE(🐾눌러서 자세히보기)**"):
+                with st.expander("**📜관련 CVE(🐾눌러서 자세히보기)**"):
                     for cve in report["related_cve"]:
                         st.write(f"- {cve}")
 
-            st.write("**대응 방안**")
+            st.write("**🐶💡대응 방안 (이렇게 해봐요!!)**")
             for action in report["recommended_actions"]:
                 st.write(f"- {action}")
 
     placeholder.empty()
-    success_placeholder.success("🔍 최종 분석 완료!")
+    success_placeholder.success("📋보고서로 보여드릴게요!")     
