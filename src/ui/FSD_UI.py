@@ -181,21 +181,21 @@ if uploaded_files and sniff_clicked and results:
         else:
             report = analyze_with_agent(stage1_result, stage2_result)
 
-        with st.expander(f"📂📄 {file_name} — 위험도: {report['risk_level']} (🐾눌러 자세히보기)"):
+        with st.expander(f"📂📄 {file_name} — 🚨위험도: {report['risk_level']} (🐾눌러 자세히보기)"):
             st.write(report["summary"])
 
-            st.write("**판단 근거**")
-            for evidence in report["evidence"]:
+            with st.expander("**📌판단 증거(🐾눌러서 자세히보기)**"):
+             for evidence in report["evidence"]:
                 st.write(f"- {evidence}")
 
             if report["related_cve"]:
-                with st.expander("**관련 CVE(🐾눌러서 자세히보기)**"):
+                with st.expander("**📜관련 CVE(🐾눌러서 자세히보기)**"):
                     for cve in report["related_cve"]:
                         st.write(f"- {cve}")
 
-            st.write("**대응 방안**")
+            st.write("**🐶💡대응 방안 (이렇게 해봐요!!)**")
             for action in report["recommended_actions"]:
                 st.write(f"- {action}")
 
     placeholder.empty()
-    success_placeholder.success("🔍 최종 분석 완료!")
+    success_placeholder.success("🔍 최종 분석 완료!")  
