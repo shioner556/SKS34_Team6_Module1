@@ -14,24 +14,6 @@ from ml.predict import predict_malware_risk
 # 3단계 코드 임포트
 from agent.agent import analyze_with_agent
 
-
-def _mock_report(file_name: str) -> dict:
-    """테스트 모드용 가짜 3단계 리포트 (API 호출 없음)."""
-    return {
-        "risk_level": "중",
-        "summary": f"[테스트 모드] '{file_name}' 가짜 리포트입니다. 실제 API를 호출하지 않았습니다.",
-        "key_features": {
-            "extension_anomaly": "테스트용 - 확장자 이상 없음",
-            "file_nature": "테스트용 - 일반 문서 파일",
-            "obfuscation_encryption": "테스트용 - 난독화 흔적 없음",
-            "structure_validation": "테스트용 - 구조 정상",
-        },
-        "evidence": ["테스트용 근거 1", "테스트용 근거 2"],
-        "related_cve": ["CVE-0000-0000"],
-        "recommended_actions": ["테스트용 대응 방안 1", "테스트용 대응 방안 2"],
-    }
-
-
 # 배경화면
 st.markdown(
     """
@@ -103,9 +85,6 @@ with button_col:
 with reset_col:
  st.button('다시 하기', on_click=_reset_uploader)
 
-# 3단계는 실제 OpenAI API를 호출해서 토큰이 소모되니, 화면/흐름만 확인할 땐 이 모드로
-test_mode = st.checkbox('🧪 테스트 모드 (3단계 API 호출 없이 가짜 리포트로 확인)')
-
 st.write('---')
 col1, mid, col2 = st.columns([10, 1, 10])
 
@@ -133,11 +112,7 @@ with col1:
                 # 1단계 탐지하면서 진행도로 표시
                 placeholder.markdown(
                     f"🐶📁 파일 겉면 킁킁하는 중...{dots[idx % 4]}\n\n(진행도 {idx}/{total_files})"
-                )
-
-                # 상세보기 필요할 때(팀원이 보여달라고 할 때) 아래 주석 해제
-                #with st.expander(f"📄 {uploaded_file.name} 상세보기"):
-                  #st.json(stage1_result)
+                ) 
         placeholder.empty()
         if results:
             st.success("📁파일 확인 완료!")
@@ -161,15 +136,6 @@ with col2:
                 f"🐶📂 파일 안까지 킁킁하는 중...{dots[idx % 4]}\n\n(진행도 {idx}/{total_files})"
             )
             time.sleep(0.4)
-
-            # 상세보기 필요할 때(팀원이 보여달라고 할 때) 아래 주석 해제
-            #with st.expander(f"📄 {file_name} 상세보기"):
-                  #summary = {
-                     #"판정 결과": stage2_result["prediction"],
-                     #"악성 확률": stage2_result["malware_probability"],
-                     #"위험 레벨": stage2_result["risk_level"],
-                  #}
-                  #st.json(summary)
         placeholder.empty()
         st.success("📂파일 안쪽까지 확인완료!")
 
