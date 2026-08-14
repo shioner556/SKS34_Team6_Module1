@@ -1,3 +1,0 @@
-data/raw/origin
-__pycache__/
-.venv/
