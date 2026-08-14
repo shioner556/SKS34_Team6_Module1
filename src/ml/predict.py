@@ -2,9 +2,11 @@
 
 import os
 import sys
+import glob
 import joblib
 import pandas as pd
 import json
+from sklearn.metrics import accuracy_score, classification_report
 
 # 1. 최상위 프로젝트 루트 경로
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,8 +20,10 @@ if SRC_DIR not in sys.path:
 if BASE_DIR not in sys.path:
     sys.path.append(BASE_DIR)
 
-# models/random_forest.pkl 경로 조합
-MODEL_PATH = os.path.join(BASE_DIR, "models", "random_forest.pkl")
+# 모델 저장 경로 (malware_rf_model.pkl 및 random_forest.pkl 호환)
+MODEL_PATH = os.path.join(BASE_DIR, "models", "malware_rf_model.pkl")
+if not os.path.exists(MODEL_PATH):
+    MODEL_PATH = os.path.join(BASE_DIR, "models", "random_forest.pkl")
 
 # 1단계 정적 분석(preprocess) 결과의 수치형 피처 목록
 FEATURE_COLUMNS = [
@@ -42,6 +46,7 @@ def load_model():
     """
     if os.path.exists(MODEL_PATH):
         try:
+            print(f"📦 모델 파일 로드 성공: {MODEL_PATH}")
             return joblib.load(MODEL_PATH)
         except Exception as e:
             print(f"[ML Module Error] 모델 로딩 실패: {e}")
@@ -56,44 +61,33 @@ def predict_malware_risk(ml_features: dict) -> dict:
     """
     1단계 피처 딕셔너리를 입력받아 ML 모델(또는 Fallback Rule)로 악성 확률 및 위험도를 예측
     """
-    # 1. 입력 피처 데이터를 DataFrame 1줄 형태로 변환
     df_input = pd.DataFrame([ml_features])
 
-    # 원-핫 인코딩 예외 처리
     if 'extension_category' in df_input.columns:
         df_input = pd.get_dummies(df_input, columns=['extension_category'], drop_first=False)
 
-    # 모델 객체에서 실제 학습할 때 쓰인 피처 이름 목록 자동 추출
     if _model_instance is not None and hasattr(_model_instance, "feature_names_in_"):
         required_columns = list(_model_instance.feature_names_in_)
     else:
-        # 모델을 못 불러왔을 경우 대비 fallback 피처 목록
         required_columns = [col for col in FEATURE_COLUMNS if col != 'suspicious_string_count']
 
-    # 모델이 필요로 하는 컬럼 중 입력 데이터에 없는 항목은 0으로 채움
     for col in required_columns:
         if col not in df_input.columns:
             df_input[col] = 0
 
-    # 결측치(NaN) 0으로 채우기 및 모델 학습 피처 순서와 동일하게 정렬
     df_input = df_input[required_columns].fillna(0)
 
-    # 2. 모델이 정상 로드된 경우 -> ML 모델 추론
     if _model_instance is not None:
         prob_percent = round(_model_instance.predict_proba(df_input)[0][1] * 100, 1)
         prediction = "Malicious" if prob_percent > 50.0 else "Benign"
-    
-    # 3. 모델 파일이 없을 경우 예외 방지용 Fallback (규칙 기반 스코어링)
     else:
         print("[ML Module Warning] 학습된 모델 파일(.pkl)이 없어 기본 규칙 기반 추론으로 대체합니다.")
         score = 5.0
-        
         suspicious_cmd = ml_features.get("suspicious_command_count", 0)
         obfusc_pat = ml_features.get("obfuscation_pattern_count", 0)
         exec_api = ml_features.get("execution_api_count", 0)
         
         score += min((suspicious_cmd * 15) + (obfusc_pat * 10) + (exec_api * 5), 50)
-        
         if ml_features.get("is_executable_extension", 0) == 1:
             score += 20
         if ml_features.get("has_double_extension", 0) == 1 or ml_features.get("extension_mime_mismatch", 0) == 1:
@@ -102,7 +96,6 @@ def predict_malware_risk(ml_features: dict) -> dict:
         prob_percent = min(score, 99.0)
         prediction = "Malicious" if prob_percent > 50.0 else "Benign"
 
-    # 위험도 등급(Risk Level) 설정
     if prob_percent >= 80.0:
         risk_level = "HIGH (상)"
     elif prob_percent >= 40.0:
@@ -110,7 +103,6 @@ def predict_malware_risk(ml_features: dict) -> dict:
     else:
         risk_level = "LOW (하)"
 
-    # 4. 결과 리턴 (dict 포맷)
     return {
         "prediction": prediction,
         "malware_probability": f"{prob_percent}%",
@@ -129,38 +121,66 @@ def predict_malware_risk_json(ml_features: dict) -> str:
 
 
 # ==========================================
-# 폴더 내 모든 파일 배치(Batch) 추론 테스트
+# 폴더 내 모든 파일 배치(Batch) 추론 및 성능 검증
 # ==========================================
 if __name__ == "__main__":
-    csv_filename = "dataset.csv"  # 테스트 및 실전 배치 추론용 CSV 파일명 (필요 시 dataset_test.csv 등으로 변경)
-    csv_path = os.path.join(BASE_DIR, "data", "preprocessed", csv_filename)
+    preprocessed_dir = os.path.join(BASE_DIR, "data", "preprocessed")
+    csv_files = glob.glob(os.path.join(preprocessed_dir, "dataset_*.csv"))
 
-    print(f"=== 🚀 {csv_filename} 기반 배치 추론 시작 ===", flush=True)
+    print(f"=== 전체 {len(csv_files)}개 preprocessed CSV 병합 배치 추론 및 성능 검증 시작 ===\n", flush=True)
 
-    if not os.path.exists(csv_path):
-        print(f"❌ CSV 파일이 존재하지 않습니다: {csv_path}", flush=True)
+    if not csv_files:
+        print(f"❌ preprocessed 폴더에 CSV 파일이 존재하지 않습니다: {preprocessed_dir}", flush=True)
         sys.exit(1)
 
     try:
-        # 1. 전처리 완료된 CSV 데이터 읽기
-        df_dataset = pd.read_csv(csv_path)
-        print(f"📊 총 {len(df_dataset)}개 데이터 행(Row) 로드 완료!\n", flush=True)
+        # 모든 dataset_*.csv 파일 불러와 하나로 병합
+        df_list = [pd.read_csv(f) for f in csv_files]
+        df_dataset = pd.concat(df_list, ignore_index=True)
+        print(f"📊 총 {len(df_dataset)}개 병합 데이터 행(Row) 로드 완료!\n", flush=True)
 
-        # 2. 행 단위로 딕셔너리 변환 후 ML 모델 추론 진행
-        success_cnt = 0
+        # 정답 라벨 컬럼 자동 감지 ('label', 'target', 'is_malware', 'class')
+        label_col = None
+        for col in ['label', 'target', 'is_malware', 'class']:
+            if col in df_dataset.columns:
+                label_col = col
+                break
+
+        y_true = []
+        y_pred = []
+
         for idx, row in df_dataset.iterrows():
             feature_dict = row.to_dict()
-            
-            # 2단계 ML 모델 추론
             res = predict_malware_risk(feature_dict)
 
-            # 파일명 또는 인덱스 가져오기
             file_identifier = feature_dict.get('filename', f"Row #{idx+1}")
+            pred_label = res['prediction']
 
-            print(f"📄 [{file_identifier}] -> 예측: {res['prediction']} | 확률: {res['malware_probability']} | 위험도: {res['risk_level']}", flush=True)
-            success_cnt += 1
+            if label_col is not None:
+                raw_label = row[label_col]
+                actual_label = "Malicious" if str(raw_label).lower() in ["1", "true", "malicious", "malware"] else "Benign"
+                
+                y_true.append(actual_label)
+                y_pred.append(pred_label)
 
-        print(f"\n✅ 총 {success_cnt}개 데이터 추론 완료!", flush=True)
+                is_correct = (pred_label == actual_label)
+                status = "✅" if is_correct else "❌"
+                
+                # 📌 개별 데이터 추론 결과 실시간 출력
+                print(f"{status} [{file_identifier}] -> 예측: {pred_label} (실제: {actual_label}) | 확률: {res['malware_probability']} | 위험도: {res['risk_level']}", flush=True)
+            else:
+                print(f" [{file_identifier}] -> 예측: {pred_label} | 확률: {res['malware_probability']} | 위험도: {res['risk_level']}", flush=True)
+
+        # 성능 검증 평가 결과 출력
+        if y_true and y_pred:
+            acc = accuracy_score(y_true, y_pred) * 100
+            print("\n" + "="*50)
+            print("[최종 평가 결과 (Model Evaluation Report)]")
+            print("="*50)
+            print(f"전체 Accuracy (정확도): {acc:.2f}%")
+            print("\n세부 리포트 (Classification Report):")
+            print(classification_report(y_true, y_pred, target_names=["Benign", "Malicious"]))
+            print("="*50)
 
     except Exception as e:
-        print(f"❌ CSV 추론 중 오류 발생: {e}", flush=True)
+        print(f"❌ CSV 추론 및 평가 중 오류 발생: {e}", flush=True)
