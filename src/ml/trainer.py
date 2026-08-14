@@ -5,6 +5,7 @@ import joblib
 import pandas as pd
 from datetime import datetime
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.utils import resample
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
 
@@ -13,18 +14,16 @@ DATA_DIR_PATH = "data/preprocessed/"
 MODEL_SAVE_PATH = "models/random_forest.pkl"
 METADATA_SAVE_PATH = "models/metadata.json"
 
+
 # 데이터셋 로드 : csv 파일에 대해 데이터셋 로드
 def load_datasets(data_dir:str) -> pd.DataFrame:
     print('===== 데이터셋 로드 시작 =====')
     print('데이터셋 로드중...')
 
-    # dataset_test.csv는 로드 대상에서 제외
-    csv_files = [
-        f for f in glob.glob(os.path.join(data_dir, '*.csv')) 
-        if not os.path.basename(f).startswith('dataset_test')
-    ]
+    # 경로 안의 dataset 파일 로드
+    csv_files = [f for f in glob.glob(os.path.join(data_dir, '*.csv'))]
 
-    # 경로 안 모든 csv 파일 경로 수집 -> 실제 테스트에서 사용
+    # 경로 안 모든 csv 파일 경로 수집
     csv_files = glob.glob(os.path.join(data_dir, '*.csv'))
 
     if not csv_files:
@@ -47,37 +46,69 @@ def load_datasets(data_dir:str) -> pd.DataFrame:
 
     # 여러 데이터 프레임을 하나로 결합
     combined_df = pd.concat(df_list, ignore_index=True)
-
     combined_df = combined_df.drop_duplicates()
 
     print(f"===== 총 {len(df_list)}개 csv 파일 통합 완료 (총 샘플 수 : {len(combined_df)}) ======\n")
     return combined_df
 
-# 다운 샘플링 : 확장자별 데이터 불균형을 해소하기 위해 사용(.pdf)
-def downsample_by_extension(df: pd.DataFrame, ext_col: str = 'extension_category', max_samples: int = 2000) -> pd.DataFrame:
-    print('===== 다운 샘플링 시작(최대 샘플 수 2000개로 설정) =====')
+
+# 확장자 별 다운/오버 샘플링
+def balance_by_extension(df: pd.DataFrame, ext_col: str = 'extension_category', label_col: str = 'label', max_samples: int = 2000, target_ratio: float = 0.3, min_malware_check: int = 5) -> pd.DataFrame:
+    print('===== 확장자별 악성/정상 샘플 수 조정 시작 (상한/하한 적용) =====')
     if ext_col not in df.columns:
-        print(f'[경고] {ext_col} 컬럼을 찾을 수 없어 다운샘플링을 진행하지 않습니다.')
+        print(f'[경고] {ext_col} 컬럼을 찾을 수 없어 균형 조정을 진행하지 않습니다.')
         return df
 
-    sampled_df = []
-    for ext, group in df.groupby(ext_col):
-        # max_samples 수를 넘어가는 확장자는 지정한 max_samples 수만큼 무작위 추출
-        if len(group) > max_samples:
-            sampled_group = group.sample(n=max_samples, random_state=42)
-            sampled_df.append(sampled_group)
-        else: 
-            sampled_df.append(group)
+    # filename에서 실제 확장자 추출
+    df = df.copy()
+    df['_real_ext'] = df['filename'].astype(str).str.extract(r'\.([A-Za-z0-9]+)$')[0].str.lower()
+    df['_real_ext'] = df['_real_ext'].fillna('unknown')
 
-    result_df = pd.concat(sampled_df, ignore_index=True).sample(frac=1, random_state=42).reset_index(drop=True)
+    result_list = []
+
+    # 실제 파일 확장자별로 데이터를 그룹화하여 진행
+    for ext, group in df.groupby('_real_ext'):
+        malware_group = group[group[label_col] == 1]
+        benign_group = group[group[label_col] == 0]
+
+        # 상한 적용 (pdf와 같이 샘플 수가 과도한 경우)
+        if len(malware_group) > max_samples:
+            malware_group = malware_group.sample(n=max_samples, random_state=42)
+        if len(benign_group) > max_samples:
+            benign_group = benign_group.sample(n=max_samples, random_state=42)
+        
+        malware_n = len(malware_group)
+        benign_n = len(benign_group)
+
+        # 정상 샘플 수를 기준으로 목표 악성 샘플 수 계산
+        target_malwer_n = int(benign_n * target_ratio)
+        target_malwer_n = min(target_malwer_n, max_samples)
+
+        # 하한 적용 (aspx, css, js, json, png 등 정상 수에 비해 악성 수가 부족한 경우)
+        if (min_malware_check <= malware_n < target_malwer_n) and (benign_n > 0):
+            n_needed = target_malwer_n - malware_n
+            boosted = resample(malware_group, replace=True, n_samples=n_needed, random_state=42)
+            malware_group = pd.concat([malware_group, boosted])
+            print(f'- [{ext}] 기존 악성 수 {malware_n}개 / 조정 후 악성 수 : {target_malwer_n}개(정상 : {benign_n}개)')
+        elif malware_n < min_malware_check:
+            print(f'-> [경고][{ext}] 악성 수 {malware_n}개로 오버샘플링 불가')
+        else:
+            print(f' - [{ext}] 악성 {malware_n}개, 정상 {benign_n}개 (이미 충분하여 보강 불필요)')
+
+        result_list.append(pd.concat([malware_group, benign_group]))
+
+    # 모든 확장자 데이터 결합
+    result_df = pd.concat(result_list, ignore_index=True).sample(frac=1, random_state=42).reset_index(drop=True)
+    result_df = result_df.drop(columns=['_real_ext'])
 
     print('===============================================================')
-    print(f'기존 샘플 수 : {len(df)}개 / 조정된 샘플 수 : {len(result_df)}개(확장자당 최대 {max_samples}개)')
+    print(f'기존 샘플 수 : {len(df)}개 / 조정된 샘플 수 : {len(result_df)}개')
+    print(f'(확장자당 최대 샘플 수 : {max_samples}개 / 최소 악성 수 : {target_malwer_n}개)')
     print('===============================================================')
     return result_df
 
 
-# 모델 학습   -> feature 내용 파악해서 수정할 것
+# 모델 학습
 def train_model(df:pd.DataFrame):
     # 전처리 및 feature engineering
     print('전처리 및 Feature Engineering 진행 중...')
@@ -90,7 +121,7 @@ def train_model(df:pd.DataFrame):
     df['label'] = df['label'].map(label_mapping)
 
     # 다운 샘플링 : extension_category별로 2000개의 샘플 수 제한
-    df = downsample_by_extension(df, ext_col='extension_category', max_samples=2000)
+    df = balance_by_extension(df, ext_col='extension_category', label_col='label', max_samples=2000, target_ratio=0.3, min_malware_check=5)
 
     # 범주형 변수 처리 : extension_category(파일의 종류)
     df = pd.get_dummies(df, columns=['extension_category'], drop_first=False)
@@ -133,14 +164,14 @@ def train_model(df:pd.DataFrame):
     # 5-Fold Stratified Cross-Validation 설정
     cv_strategy = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
-    # RandomForest 모델 생성 및 학습
-    base_model = RandomForestClassifier(class_weight='balanced', random_state=42)
+    # RandomForest 모델 생성 및 학습(악성에 약간의 가중치 부여)
+    base_model = RandomForestClassifier(class_weight={0:1.0, 1:1.5}, random_state=42)
 
     # GridSearchCV 객체 생성 (하이퍼파라미터 자동 탐색을 위한 객체)
     grid_search = GridSearchCV(
         estimator=base_model,       # 머신러닝 모델 지정
         param_grid=param_grid,      # 하이퍼파라미터 후보군 지정
-        scoring='recall',           # 최적 파라미터를 선정할 때 기준이 되는 지표
+        scoring='recall',           # 최적 파라미터를 선정할 때 기준이 되는 지표(재현율 향상을 기준)
         cv=cv_strategy,
         n_jobs=-1
     )
@@ -172,6 +203,7 @@ def train_model(df:pd.DataFrame):
     print(f"===== 모델 학습 메타데이터 저장 =====")
     print("메타데이터 저장 중...")
     save_training_history(X_train, y_test, y_pred, grid_search, model)
+
 
 # 모델 학습 메타데이터 저장
 def save_training_history(X, y_test, y_pred, grid_search, model):
